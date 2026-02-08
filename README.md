@@ -2,7 +2,45 @@
 
 A local web tool for batch-managing Codex conversation history.
 
-> Prerequisite: Node.js 18+ must be installed on the machine before running the installer.
+> Two install paths are supported:
+> 1) one-line shell installer (`curl`) for users without Homebrew
+> 2) Homebrew formula (optional)
+
+## Screenshot
+
+![Codex History Manager UI](./image.png)
+
+## Install (No Homebrew Required)
+
+Before using the shell installer, verify Node is available:
+
+```bash
+node -v
+```
+
+Then install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
+```
+
+Then start:
+
+```bash
+codex-history start
+```
+
+## Install with Homebrew (Optional)
+
+```bash
+brew install cola-runner/tap/codex-history
+```
+
+Then start:
+
+```bash
+codex-history start
+```
 
 It helps you:
 - browse active and archived sessions
@@ -16,16 +54,11 @@ This is a community utility and is not affiliated with OpenAI.
 
 ## Quick Start
 
-Before you start, verify Node is available:
-
-```bash
-node -v
-```
-
 ### 1) Install (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
+node -v
+curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
 ```
 
 ### 2) Start the app
@@ -45,8 +78,8 @@ Use the tabs in the UI:
 
 ## Requirements
 
-- Node.js 18+ (or newer)
-- `curl` and `tar` for one-line installer
+- Shell installer path: Node.js 18+, `curl`, `tar`
+- Homebrew path: Homebrew (Node is installed as a formula dependency)
 
 ## Default Paths
 
@@ -97,10 +130,13 @@ codex-history cleanup --retention-days 30
 
 ## Install Options
 
-### A) One-line installer (GitHub)
+### A) One-line installer (recommended, no Homebrew needed)
+
+Before using the installer, verify Node is available:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
+node -v
+curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
 ```
 
 Optional install variables:
@@ -115,13 +151,19 @@ bash scripts/install.sh
 
 Note: installer refuses unsafe install roots like `/` and `$HOME`.
 
-### B) Install from local source
+### B) Homebrew (optional)
+
+```bash
+brew install cola-runner/tap/codex-history
+```
+
+### C) Install from local source
 
 ```bash
 node src/cli.js install
 ```
 
-### C) Homebrew
+### D) Homebrew Formula Template
 
 Use `packaging/homebrew/codex-history.rb` as the formula template when publishing a tap.
 
@@ -130,7 +172,7 @@ Use `packaging/homebrew/codex-history.rb` as the formula template when publishin
 One-line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/uninstall.sh | bash
 ```
 
 Local:
