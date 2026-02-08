@@ -1,0 +1,20 @@
+{
+  "name": "codex-history-manager",
+  "version": "0.1.0",
+  "description": "Local batch manager for Codex conversation history.",
+  "type": "commonjs",
+  "bin": {
+    "codex-history": "./bin/codex-history"
+  },
+  "scripts": {
+    "start": "node src/cli.js start",
+    "test": "node --test"
+  },
+  "keywords": [
+    "codex",
+    "history",
+    "archive",
+    "trash"
+  ],
+  "license": "MIT"
+}
