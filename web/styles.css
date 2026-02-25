@@ -1,30 +1,83 @@
 /* ═══════════════════════════════════════════════════════════
-   CODEX HISTORY MANAGER — Industrial Control Panel
-   Dark monochrome + amber signal accent
+   SESSION HUB — Light / Dark Theme
+   Default: light — toggle via [data-theme="dark"]
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* surfaces */
+  /* surfaces — light */
+  --bg: #f5f5f5;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --surface-3: #e8e8e8;
+
+  /* borders */
+  --line: #e0e0e0;
+  --line-hard: #ccc;
+
+  /* text */
+  --text: #444;
+  --text-bright: #111;
+  --text-dim: #999;
+
+  /* accent — deep blue-grey */
+  --accent: #2a6cb6;
+  --accent-soft: rgba(42, 108, 182, 0.06);
+  --accent-mid: rgba(42, 108, 182, 0.18);
+
+  /* header */
+  --header-bg: #1e293b;
+  --header-border: #2a6cb6;
+  --header-text-dim: rgba(255, 255, 255, 0.45);
+  --header-config: rgba(255, 255, 255, 0.3);
+
+  /* status */
+  --danger: #c44133;
+  --danger-soft: rgba(196, 65, 51, 0.06);
+  --danger-mid: rgba(196, 65, 51, 0.18);
+  --ok: #2d8a4e;
+  --ok-soft: rgba(45, 138, 78, 0.06);
+  --ok-mid: rgba(45, 138, 78, 0.18);
+  --warn: #b8860b;
+  --warn-soft: rgba(184, 134, 11, 0.06);
+  --warn-mid: rgba(184, 134, 11, 0.18);
+
+  /* modal */
+  --modal-backdrop: rgba(0, 0, 0, 0.3);
+
+  /* body grid */
+  --grid-line: rgba(0, 0, 0, 0.03);
+
+  /* selection */
+  --selection-bg: var(--accent-mid);
+  --selection-color: #fff;
+
+  /* type */
+  --display: "Darker Grotesque", "Arial Black", Impact, sans-serif;
+  --mono: "Red Hat Mono", "SF Mono", Consolas, "Courier New", monospace;
+}
+
+[data-theme="dark"] {
   --bg: #0c0c0c;
   --surface: #141414;
   --surface-2: #1a1a1a;
   --surface-3: #202020;
 
-  /* borders */
   --line: #252525;
   --line-hard: #333;
 
-  /* text */
   --text: #b0b0b0;
   --text-bright: #e8e8e8;
   --text-dim: #4a4a4a;
 
-  /* accent — industrial amber */
   --accent: #d4a017;
   --accent-soft: rgba(212, 160, 23, 0.08);
   --accent-mid: rgba(212, 160, 23, 0.2);
 
-  /* status */
+  --header-bg: #000;
+  --header-border: #d4a017;
+  --header-text-dim: rgba(255, 255, 255, 0.55);
+  --header-config: rgba(255, 255, 255, 0.18);
+
   --danger: #c44133;
   --danger-soft: rgba(196, 65, 51, 0.08);
   --danger-mid: rgba(196, 65, 51, 0.25);
@@ -35,9 +88,9 @@
   --warn-soft: rgba(184, 134, 11, 0.08);
   --warn-mid: rgba(184, 134, 11, 0.25);
 
-  /* type */
-  --display: "Darker Grotesque", "Arial Black", Impact, sans-serif;
-  --mono: "Red Hat Mono", "SF Mono", Consolas, "Courier New", monospace;
+  --modal-backdrop: rgba(0, 0, 0, 0.7);
+  --grid-line: rgba(255, 255, 255, 0.018);
+  --selection-color: #fff;
 }
 
 *,
@@ -52,8 +105,8 @@ body {
   min-height: 100vh;
   background: var(--bg);
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 24px 24px;
   color: var(--text);
   font-family: var(--mono);
@@ -63,8 +116,8 @@ body {
 }
 
 ::selection {
-  background: var(--accent-mid);
-  color: #fff;
+  background: var(--selection-bg);
+  color: var(--selection-color);
 }
 
 .app-shell {
@@ -80,9 +133,9 @@ body {
   justify-content: space-between;
   align-items: flex-end;
   gap: 2rem;
-  background: #000;
+  background: var(--header-bg);
   border: none;
-  border-bottom: 1px solid var(--accent);
+  border-bottom: 1px solid var(--header-border);
   border-radius: 0;
   padding: 2.25rem 2rem 1.5rem;
   box-shadow: 0 1px 0 var(--accent-mid);
@@ -96,16 +149,16 @@ body {
 }
 
 .top-actions .btn {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.55);
+  border-color: var(--header-text-dim);
+  color: var(--header-text-dim);
   background: transparent;
   font-size: 0.72rem;
 }
 
 .top-actions .btn:hover {
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.7);
   color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .top-actions .btn.warning {
@@ -125,7 +178,7 @@ body {
   font-family: var(--mono);
   font-size: 0.62rem;
   font-weight: 400;
-  opacity: 0.65;
+  opacity: 0.75;
 }
 
 h1 {
@@ -139,7 +192,7 @@ h1 {
 }
 
 .subline {
-  color: var(--text-dim);
+  color: var(--header-text-dim);
   font-size: 0.75rem;
   font-weight: 400;
   letter-spacing: 0.03em;
@@ -153,8 +206,31 @@ h1 {
 #config-info {
   margin-top: 0.5rem;
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.18);
+  color: var(--header-config);
   letter-spacing: 0.02em;
+}
+
+/* ── THEME TOGGLE ───────────────────────────────────── */
+
+.theme-toggle {
+  border: 1px solid var(--header-text-dim);
+  background: transparent;
+  color: var(--header-text-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.42rem 0.85rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: all 0.1s ease;
+  border-radius: 0;
+}
+
+.theme-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* ── NOTICE ──────────────────────────────────────────── */
@@ -196,14 +272,22 @@ h1 {
 
 .feedback.ok {
   background: var(--ok-soft);
-  color: #5aad6a;
+  color: #2d8a4e;
   border-bottom-color: var(--ok-mid);
 }
 
 .feedback.error {
   background: var(--danger-soft);
-  color: #e05a4f;
+  color: #c44133;
   border-bottom-color: var(--danger-mid);
+}
+
+[data-theme="dark"] .feedback.ok {
+  color: #5aad6a;
+}
+
+[data-theme="dark"] .feedback.error {
+  color: #e05a4f;
 }
 
 /* ── TABS ────────────────────────────────────────────── */
@@ -348,17 +432,17 @@ input[type="checkbox"] {
 .btn.primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: #000;
+  color: #fff;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #e0ad1e;
+  filter: brightness(1.1);
 }
 
 .btn.warning {
   border-color: var(--warn-mid);
   background: var(--warn-soft);
-  color: var(--accent);
+  color: var(--warn);
 }
 
 .btn.warning:hover:not(:disabled) {
@@ -368,7 +452,7 @@ input[type="checkbox"] {
 .btn.danger {
   border-color: var(--danger-mid);
   background: var(--danger-soft);
-  color: #e05a4f;
+  color: var(--danger);
 }
 
 .btn.danger:hover:not(:disabled) {
@@ -466,7 +550,7 @@ tbody tr:last-child td {
 
 .pill.expired {
   border-color: var(--danger-mid);
-  color: #e05a4f;
+  color: var(--danger);
   background: var(--danger-soft);
 }
 
@@ -477,7 +561,7 @@ tbody tr:last-child td {
 
 .pill.live {
   border-color: var(--ok-mid);
-  color: #5aad6a;
+  color: var(--ok);
   background: var(--ok-soft);
 }
 
@@ -488,7 +572,7 @@ tbody tr:last-child td {
 
 .pill.active {
   border-color: var(--ok-mid);
-  color: #5aad6a;
+  color: var(--ok);
   background: var(--ok-soft);
 }
 
@@ -499,13 +583,43 @@ tbody tr:last-child td {
 
 .pill.archived {
   border-color: var(--warn-mid);
-  color: var(--accent);
+  color: var(--warn);
   background: var(--warn-soft);
 }
 
 .pill.archived::before {
   background: var(--warn);
   box-shadow: 0 0 6px var(--warn);
+}
+
+/* ── PROVIDER PILLS ─────────────────────────────────── */
+
+.pill.claude {
+  border-color: rgba(204, 120, 50, 0.25);
+  color: #b86a20;
+  background: rgba(204, 120, 50, 0.06);
+}
+
+.pill.claude::before {
+  background: #cc7832;
+  box-shadow: 0 0 6px #cc7832;
+}
+
+.pill.codex {
+  border-color: var(--ok-mid);
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.pill.codex::before {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+
+[data-theme="dark"] .pill.claude {
+  color: #cc7832;
+  border-color: rgba(204, 120, 50, 0.3);
+  background: rgba(204, 120, 50, 0.08);
 }
 
 /* ── MODAL ───────────────────────────────────────────── */
@@ -526,7 +640,7 @@ body.modal-open {
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--modal-backdrop);
   backdrop-filter: blur(4px);
 }
 
@@ -537,9 +651,13 @@ body.modal-open {
   border-top: 2px solid var(--accent);
   border-radius: 0;
   background: var(--surface);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.15);
   padding: 1.5rem;
   animation: modal-in 0.15s ease-out both;
+}
+
+[data-theme="dark"] .modal-dialog {
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
 }
 
 .modal-dialog h2 {

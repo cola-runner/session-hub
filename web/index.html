@@ -3,108 +3,114 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Codex History Manager</title>
+    <title>Session Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Darker+Grotesque:wght@700;900&family=Red+Hat+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      try {
+        var t = localStorage.getItem("session-hub-theme");
+        if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+      } catch(e) {}
+    </script>
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
           <p class="eyebrow">// community utility</p>
-          <h1>Codex History Manager</h1>
-          <p class="subline">Local batch management for Codex conversation history</p>
+          <h1>Session Hub</h1>
+          <p class="subline">Local batch management for CLI conversation history</p>
           <p id="config-info" class="muted"></p>
         </div>
         <div class="top-actions">
+          <button id="theme-toggle" class="theme-toggle">Dark</button>
           <button id="refresh-all" class="btn ghost">Refresh</button>
           <button id="cleanup-expired" class="btn warning">Cleanup Expired Trash</button>
         </div>
       </header>
 
       <section class="notice" role="note">
-        Unofficial community tool. Not affiliated with OpenAI.
+        Unofficial community tool. Not affiliated with OpenAI or Anthropic.
       </section>
 
       <section id="feedback" class="feedback" aria-live="polite"></section>
 
       <nav class="tabs" role="tablist">
-        <button id="tab-active" class="tab active" role="tab" aria-selected="true">
-          Active
+        <button id="tab-codex" class="tab active" role="tab" aria-selected="true">
+          Codex
         </button>
-        <button id="tab-archived" class="tab" role="tab" aria-selected="false">
-          Archived
+        <button id="tab-claude" class="tab" role="tab" aria-selected="false">
+          Claude
         </button>
         <button id="tab-trash" class="tab" role="tab" aria-selected="false">Trash</button>
       </nav>
 
-      <section id="view-active" class="card view">
+      <section id="view-codex" class="card view">
         <div class="controls">
-          <input id="active-query" type="search" placeholder="Search active sessions" />
-          <button id="active-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="active-clear-selection" class="btn ghost">Clear Selection</button>
+          <input id="codex-query" type="search" placeholder="Search Codex sessions" />
+          <button id="codex-select-filtered" class="btn ghost">Select Filtered</button>
+          <button id="codex-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
 
         <div class="batch-actions">
-          <button id="active-action-archive" class="btn primary">Archive</button>
-          <button id="active-action-delete" class="btn danger">Move To Trash</button>
-          <span id="active-selection-meta" class="muted"></span>
+          <button id="codex-action-archive" class="btn primary">Archive</button>
+          <button id="codex-action-unarchive" class="btn primary">Unarchive</button>
+          <button id="codex-action-delete" class="btn danger">Move To Trash</button>
+          <span id="codex-selection-meta" class="muted"></span>
         </div>
 
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th><input id="active-check-all" type="checkbox" /></th>
+                <th><input id="codex-check-all" type="checkbox" /></th>
                 <th>Title</th>
+                <th>State</th>
                 <th>Thread</th>
-                <th>Filename</th>
                 <th>Updated</th>
                 <th>Size</th>
                 <th>Relative Path</th>
               </tr>
             </thead>
-            <tbody id="active-body"></tbody>
+            <tbody id="codex-body"></tbody>
           </table>
         </div>
       </section>
 
-      <section id="view-archived" class="card view hidden">
+      <section id="view-claude" class="card view hidden">
         <div class="controls">
-          <input id="archived-query" type="search" placeholder="Search archived sessions" />
-          <button id="archived-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="archived-clear-selection" class="btn ghost">Clear Selection</button>
+          <input id="claude-query" type="search" placeholder="Search Claude sessions" />
+          <button id="claude-select-filtered" class="btn ghost">Select Filtered</button>
+          <button id="claude-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
 
         <div class="batch-actions">
-          <button id="archived-action-unarchive" class="btn primary">Unarchive</button>
-          <button id="archived-action-delete" class="btn danger">Move To Trash</button>
-          <span id="archived-selection-meta" class="muted"></span>
+          <button id="claude-action-delete" class="btn danger">Move To Trash</button>
+          <span id="claude-selection-meta" class="muted"></span>
         </div>
 
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th><input id="archived-check-all" type="checkbox" /></th>
+                <th><input id="claude-check-all" type="checkbox" /></th>
                 <th>Title</th>
-                <th>Thread</th>
-                <th>Filename</th>
+                <th>Project</th>
+                <th>Branch</th>
                 <th>Updated</th>
                 <th>Size</th>
-                <th>Relative Path</th>
               </tr>
             </thead>
-            <tbody id="archived-body"></tbody>
+            <tbody id="claude-body"></tbody>
           </table>
         </div>
       </section>
 
       <section id="view-trash" class="card view hidden">
         <div class="controls">
-          <input id="trash-query" type="search" placeholder="Search trash by id or filename" />
+          <input id="trash-query" type="search" placeholder="Search trash" />
           <button id="trash-select-filtered" class="btn ghost">Select Filtered</button>
           <button id="trash-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
@@ -121,12 +127,12 @@
               <tr>
                 <th><input id="trash-check-all" type="checkbox" /></th>
                 <th>Expired</th>
+                <th>Source</th>
                 <th>Thread</th>
                 <th>Deleted At</th>
                 <th>Expires At</th>
                 <th>Size</th>
                 <th>Original Path</th>
-                <th>Trash Id</th>
               </tr>
             </thead>
             <tbody id="trash-body"></tbody>

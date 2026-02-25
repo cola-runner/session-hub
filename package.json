@@ -1,10 +1,10 @@
 {
-  "name": "codex-history-manager",
-  "version": "0.1.0",
-  "description": "Local batch manager for Codex conversation history.",
+  "name": "session-hub",
+  "version": "0.2.0",
+  "description": "Local batch manager for CLI conversation history.",
   "type": "commonjs",
   "bin": {
-    "codex-history": "./bin/codex-history"
+    "session-hub": "./bin/session-hub"
   },
   "scripts": {
     "start": "node src/cli.js start",
@@ -12,6 +12,7 @@
   },
   "keywords": [
     "codex",
+    "claude",
     "history",
     "archive",
     "trash"

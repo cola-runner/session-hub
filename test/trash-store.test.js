@@ -7,7 +7,7 @@ const { SessionStore } = require("../src/session-store");
 const { TrashStore } = require("../src/trash-store");
 
 async function createTempDir() {
-  return fs.mkdtemp(path.join(os.tmpdir(), "codex-history-manager-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "session-hub-"));
 }
 
 async function writeRolloutFile(filePath) {

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CODEX_HISTORY_REPO:-cola-runner/session-hub}"
-REF="${CODEX_HISTORY_REF:-main}"
-TARBALL_URL="${CODEX_HISTORY_TARBALL_URL:-https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz}"
-INSTALL_ROOT="${CODEX_HISTORY_INSTALL_ROOT:-$HOME/.codex-history-manager}"
-BIN_DIR="${CODEX_HISTORY_BIN_DIR:-$HOME/.local/bin}"
-LAUNCHER_PATH="${BIN_DIR}/codex-history"
+REPO="${SESSION_HUB_REPO:-cola-runner/session-hub}"
+REF="${SESSION_HUB_REF:-main}"
+TARBALL_URL="${SESSION_HUB_TARBALL_URL:-https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz}"
+INSTALL_ROOT="${SESSION_HUB_INSTALL_ROOT:-$HOME/.session-hub}"
+BIN_DIR="${SESSION_HUB_BIN_DIR:-$HOME/.local/bin}"
+LAUNCHER_PATH="${BIN_DIR}/session-hub"
 
 assert_safe_install_root() {
   local target="${1%/}"
@@ -16,7 +16,7 @@ assert_safe_install_root() {
 
   if [[ "$target" == "/" || "$target" == "$HOME" ]]; then
     echo "Refusing unsafe install root: $1" >&2
-    echo "Use a dedicated directory such as ~/.codex-history-manager" >&2
+    echo "Use a dedicated directory such as ~/.session-hub" >&2
     exit 1
   fi
 }
@@ -42,9 +42,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Downloading ${TARBALL_URL}"
-curl -fsSL "$TARBALL_URL" -o "$tmp_dir/codex-history-manager.tar.gz"
+curl -fsSL "$TARBALL_URL" -o "$tmp_dir/session-hub.tar.gz"
 
-tar -xzf "$tmp_dir/codex-history-manager.tar.gz" -C "$tmp_dir"
+tar -xzf "$tmp_dir/session-hub.tar.gz" -C "$tmp_dir"
 
 source_dir="$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
 if [[ -z "$source_dir" ]]; then
@@ -74,4 +74,4 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 echo
-echo "Start with: codex-history start"
+echo "Start with: session-hub start"

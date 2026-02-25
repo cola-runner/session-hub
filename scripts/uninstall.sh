@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INSTALL_ROOT="${CODEX_HISTORY_INSTALL_ROOT:-$HOME/.codex-history-manager}"
-BIN_DIR="${CODEX_HISTORY_BIN_DIR:-$HOME/.local/bin}"
-LAUNCHER_PATH="${BIN_DIR}/codex-history"
-LEGACY_LAUNCHER_PATH="${BIN_DIR}/codex-session-tool"
+INSTALL_ROOT="${SESSION_HUB_INSTALL_ROOT:-$HOME/.session-hub}"
+BIN_DIR="${SESSION_HUB_BIN_DIR:-$HOME/.local/bin}"
+LAUNCHER_PATH="${BIN_DIR}/session-hub"
+LEGACY_LAUNCHER_PATH="${BIN_DIR}/codex-history"
 
 assert_safe_install_root() {
   local target="${1%/}"
@@ -14,7 +14,7 @@ assert_safe_install_root() {
 
   if [[ "$target" == "/" || "$target" == "$HOME" ]]; then
     echo "Refusing unsafe install root: $1" >&2
-    echo "Use a dedicated directory such as ~/.codex-history-manager" >&2
+    echo "Use a dedicated directory such as ~/.session-hub" >&2
     exit 1
   fi
 }
@@ -40,4 +40,4 @@ else
   echo "Install directory not found: $INSTALL_ROOT"
 fi
 
-echo "Codex local data was kept: ~/.codex and ~/.codex-trash"
+echo "Local data was kept: ~/.codex, ~/.claude, and ~/.codex-trash"

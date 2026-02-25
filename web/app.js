@@ -1,16 +1,49 @@
+/* ── theme ────────────────────────────────────────────── */
+
+function applyTheme(theme) {
+  if (theme === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  const btn = document.getElementById("theme-toggle");
+  if (btn) {
+    btn.textContent = theme === "dark" ? "Light" : "Dark";
+  }
+}
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem("session-hub-theme");
+  } catch {
+    return null;
+  }
+}
+
+function setStoredTheme(theme) {
+  try {
+    localStorage.setItem("session-hub-theme", theme);
+  } catch {
+    // ignore
+  }
+}
+
+// Apply immediately to avoid flash
+applyTheme(getStoredTheme() || "light");
+
 const state = {
   config: null,
   sessions: [],
   trash: [],
-  currentView: "active",
+  currentView: "codex",
   queries: {
-    active: "",
-    archived: "",
+    codex: "",
+    claude: "",
     trash: ""
   },
   selected: {
-    active: new Set(),
-    archived: new Set(),
+    codex: new Set(),
+    claude: new Set(),
     trash: new Set()
   },
   confirmResolve: null,
@@ -24,31 +57,31 @@ const dom = {
   refreshAll: document.getElementById("refresh-all"),
   cleanupExpired: document.getElementById("cleanup-expired"),
 
-  tabActive: document.getElementById("tab-active"),
-  tabArchived: document.getElementById("tab-archived"),
+  tabCodex: document.getElementById("tab-codex"),
+  tabClaude: document.getElementById("tab-claude"),
   tabTrash: document.getElementById("tab-trash"),
 
-  viewActive: document.getElementById("view-active"),
-  viewArchived: document.getElementById("view-archived"),
+  viewCodex: document.getElementById("view-codex"),
+  viewClaude: document.getElementById("view-claude"),
   viewTrash: document.getElementById("view-trash"),
 
-  activeQuery: document.getElementById("active-query"),
-  activeSelectFiltered: document.getElementById("active-select-filtered"),
-  activeClearSelection: document.getElementById("active-clear-selection"),
-  activeSelectionMeta: document.getElementById("active-selection-meta"),
-  activeCheckAll: document.getElementById("active-check-all"),
-  activeBody: document.getElementById("active-body"),
-  activeActionArchive: document.getElementById("active-action-archive"),
-  activeActionDelete: document.getElementById("active-action-delete"),
+  codexQuery: document.getElementById("codex-query"),
+  codexSelectFiltered: document.getElementById("codex-select-filtered"),
+  codexClearSelection: document.getElementById("codex-clear-selection"),
+  codexSelectionMeta: document.getElementById("codex-selection-meta"),
+  codexCheckAll: document.getElementById("codex-check-all"),
+  codexBody: document.getElementById("codex-body"),
+  codexActionArchive: document.getElementById("codex-action-archive"),
+  codexActionUnarchive: document.getElementById("codex-action-unarchive"),
+  codexActionDelete: document.getElementById("codex-action-delete"),
 
-  archivedQuery: document.getElementById("archived-query"),
-  archivedSelectFiltered: document.getElementById("archived-select-filtered"),
-  archivedClearSelection: document.getElementById("archived-clear-selection"),
-  archivedSelectionMeta: document.getElementById("archived-selection-meta"),
-  archivedCheckAll: document.getElementById("archived-check-all"),
-  archivedBody: document.getElementById("archived-body"),
-  archivedActionUnarchive: document.getElementById("archived-action-unarchive"),
-  archivedActionDelete: document.getElementById("archived-action-delete"),
+  claudeQuery: document.getElementById("claude-query"),
+  claudeSelectFiltered: document.getElementById("claude-select-filtered"),
+  claudeClearSelection: document.getElementById("claude-clear-selection"),
+  claudeSelectionMeta: document.getElementById("claude-selection-meta"),
+  claudeCheckAll: document.getElementById("claude-check-all"),
+  claudeBody: document.getElementById("claude-body"),
+  claudeActionDelete: document.getElementById("claude-action-delete"),
 
   trashQuery: document.getElementById("trash-query"),
   trashSelectFiltered: document.getElementById("trash-select-filtered"),
@@ -67,24 +100,7 @@ const dom = {
   confirmAccept: document.getElementById("confirm-accept")
 };
 
-const SESSION_VIEWS = {
-  active: {
-    body: dom.activeBody,
-    checkAll: dom.activeCheckAll,
-    clearSelection: dom.activeClearSelection,
-    query: dom.activeQuery,
-    selectFiltered: dom.activeSelectFiltered,
-    selectionMeta: dom.activeSelectionMeta
-  },
-  archived: {
-    body: dom.archivedBody,
-    checkAll: dom.archivedCheckAll,
-    clearSelection: dom.archivedClearSelection,
-    query: dom.archivedQuery,
-    selectFiltered: dom.archivedSelectFiltered,
-    selectionMeta: dom.archivedSelectionMeta
-  }
-};
+/* ── helpers ──────────────────────────────────────────── */
 
 function formatBytes(sizeBytes) {
   if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
@@ -128,6 +144,20 @@ function truncateText(value, maxLength = 56) {
   return `${chars.slice(0, maxLength - 1).join("")}…`;
 }
 
+function statePill(sessionState) {
+  if (sessionState === "archived") {
+    return `<span class="pill archived">archived</span>`;
+  }
+  return `<span class="pill active">active</span>`;
+}
+
+function providerBadge(provider) {
+  if (provider === "claude") {
+    return `<span class="pill claude">Claude</span>`;
+  }
+  return `<span class="pill codex">Codex</span>`;
+}
+
 function trashExpiryPill(isExpired) {
   if (isExpired) {
     return `<span class="pill expired">expired</span>`;
@@ -160,6 +190,15 @@ async function requestJson(url, options = {}) {
   }
   return payload;
 }
+
+function toError(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+/* ── confirm modal ────────────────────────────────────── */
 
 function closeConfirmModal(accepted) {
   const resolver = state.confirmResolve;
@@ -215,17 +254,37 @@ function requestConfirmation({
   });
 }
 
-function filteredSessions(viewName) {
-  const query = state.queries[viewName].trim().toLowerCase();
-  return state.sessions.filter((session) => {
-    if (session.state !== viewName) {
-      return false;
-    }
+/* ── filtering ────────────────────────────────────────── */
+
+function codexSessions() {
+  return state.sessions.filter((s) => s.provider === "codex" || !s.provider);
+}
+
+function claudeSessions() {
+  return state.sessions.filter((s) => s.provider === "claude");
+}
+
+function filteredCodex() {
+  const query = state.queries.codex.trim().toLowerCase();
+  return codexSessions().filter((session) => {
     if (!query) {
       return true;
     }
     const text = `${session.title || ""} ${session.threadId} ${session.fileName} ${
-      session.relativePath
+      session.relativePath || ""
+    } ${session.state}`.toLowerCase();
+    return text.includes(query);
+  });
+}
+
+function filteredClaude() {
+  const query = state.queries.claude.trim().toLowerCase();
+  return claudeSessions().filter((session) => {
+    if (!query) {
+      return true;
+    }
+    const text = `${session.title || ""} ${session.threadId} ${session.projectName || ""} ${
+      session.gitBranch || ""
     }`.toLowerCase();
     return text.includes(query);
   });
@@ -240,66 +299,30 @@ function filteredTrash() {
     const text =
       `${item.threadId || ""} ${item.fileName || ""} ${item.originalRelativePath || ""} ${
         item.trashId || ""
-      }`.toLowerCase();
+      } ${item.provider || ""}`.toLowerCase();
     return text.includes(query);
   });
 }
 
+/* ── view switching ───────────────────────────────────── */
+
 function setCurrentView(viewName) {
   state.currentView = viewName;
 
-  const activeView = viewName === "active";
-  const archivedView = viewName === "archived";
-  const trashView = viewName === "trash";
+  dom.viewCodex.classList.toggle("hidden", viewName !== "codex");
+  dom.viewClaude.classList.toggle("hidden", viewName !== "claude");
+  dom.viewTrash.classList.toggle("hidden", viewName !== "trash");
 
-  dom.viewActive.classList.toggle("hidden", !activeView);
-  dom.viewArchived.classList.toggle("hidden", !archivedView);
-  dom.viewTrash.classList.toggle("hidden", !trashView);
+  dom.tabCodex.classList.toggle("active", viewName === "codex");
+  dom.tabClaude.classList.toggle("active", viewName === "claude");
+  dom.tabTrash.classList.toggle("active", viewName === "trash");
 
-  dom.tabActive.classList.toggle("active", activeView);
-  dom.tabArchived.classList.toggle("active", archivedView);
-  dom.tabTrash.classList.toggle("active", trashView);
-
-  dom.tabActive.setAttribute("aria-selected", String(activeView));
-  dom.tabArchived.setAttribute("aria-selected", String(archivedView));
-  dom.tabTrash.setAttribute("aria-selected", String(trashView));
+  dom.tabCodex.setAttribute("aria-selected", String(viewName === "codex"));
+  dom.tabClaude.setAttribute("aria-selected", String(viewName === "claude"));
+  dom.tabTrash.setAttribute("aria-selected", String(viewName === "trash"));
 }
 
-function renderSessionRows(rows, targetBody, selectedSet) {
-  targetBody.innerHTML = "";
-  for (const session of rows) {
-    const title = session.title || "Untitled session";
-    const displayTitle = truncateText(title, 62);
-    const displayThreadId = truncateText(session.threadId, 14);
-
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
-      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
-      <td title="${escapeHtml(session.threadId)}">${escapeHtml(displayThreadId)}</td>
-      <td title="${escapeHtml(session.fileName)}">${escapeHtml(truncateText(session.fileName, 34))}</td>
-      <td>${formatDate(session.updatedAt)}</td>
-      <td>${formatBytes(session.sizeBytes)}</td>
-      <td title="${escapeHtml(session.relativePath)}">${escapeHtml(
-      truncateText(session.relativePath, 56)
-    )}</td>
-    `;
-    targetBody.appendChild(row);
-  }
-
-  targetBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
-    const id = checkbox.getAttribute("data-session-id");
-    checkbox.checked = selectedSet.has(id);
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        selectedSet.add(id);
-      } else {
-        selectedSet.delete(id);
-      }
-      renderSelectionMeta();
-    });
-  });
-}
+/* ── selection helpers ────────────────────────────────── */
 
 function applySelection(selectedSet, rows, idField, shouldSelect) {
   for (const row of rows) {
@@ -316,14 +339,6 @@ function countSelectedRows(selectedSet, rows, idField) {
   return rows.filter((row) => selectedSet.has(row[idField])).length;
 }
 
-function sessionCount(viewName) {
-  return state.sessions.filter((item) => item.state === viewName).length;
-}
-
-function sessionIdSet(viewName) {
-  return new Set(state.sessions.filter((item) => item.state === viewName).map((item) => item.itemId));
-}
-
 function pruneSelectionSet(selectedSet, validIds) {
   for (const selected of Array.from(selectedSet)) {
     if (!validIds.has(selected)) {
@@ -332,25 +347,95 @@ function pruneSelectionSet(selectedSet, validIds) {
   }
 }
 
-function renderSessionView(viewName) {
-  const rows = filteredSessions(viewName);
-  const view = SESSION_VIEWS[viewName];
-  const selectedSet = state.selected[viewName];
+/* ── render: Codex ────────────────────────────────────── */
 
-  renderSessionRows(rows, view.body, selectedSet);
+function renderCodex() {
+  const rows = filteredCodex();
+  const selectedSet = state.selected.codex;
+
+  dom.codexBody.innerHTML = "";
+  for (const session of rows) {
+    const title = session.title || "Untitled session";
+    const displayTitle = truncateText(title, 62);
+    const displayThreadId = truncateText(session.threadId, 14);
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+      <td>${statePill(session.state)}</td>
+      <td title="${escapeHtml(session.threadId)}">${escapeHtml(displayThreadId)}</td>
+      <td>${formatDate(session.updatedAt)}</td>
+      <td>${formatBytes(session.sizeBytes)}</td>
+      <td title="${escapeHtml(session.relativePath || "")}">${escapeHtml(
+      truncateText(session.relativePath || "", 48)
+    )}</td>
+    `;
+    dom.codexBody.appendChild(row);
+  }
+
+  dom.codexBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+    const id = checkbox.getAttribute("data-session-id");
+    checkbox.checked = selectedSet.has(id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedSet.add(id);
+      } else {
+        selectedSet.delete(id);
+      }
+      renderSelectionMeta();
+    });
+  });
 
   const selectedInRows = countSelectedRows(selectedSet, rows, "itemId");
-  view.checkAll.checked = rows.length > 0 && selectedInRows === rows.length;
+  dom.codexCheckAll.checked = rows.length > 0 && selectedInRows === rows.length;
   renderSelectionMeta();
 }
 
-function renderActive() {
-  renderSessionView("active");
+/* ── render: Claude ───────────────────────────────────── */
+
+function renderClaude() {
+  const rows = filteredClaude();
+  const selectedSet = state.selected.claude;
+
+  dom.claudeBody.innerHTML = "";
+  for (const session of rows) {
+    const title = session.title || "Untitled session";
+    const displayTitle = truncateText(title, 62);
+    const project = session.projectName || "-";
+    const branch = session.gitBranch || "-";
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+      <td title="${escapeHtml(project)}">${escapeHtml(truncateText(project, 30))}</td>
+      <td>${escapeHtml(truncateText(branch, 20))}</td>
+      <td>${formatDate(session.updatedAt)}</td>
+      <td>${formatBytes(session.sizeBytes)}</td>
+    `;
+    dom.claudeBody.appendChild(row);
+  }
+
+  dom.claudeBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+    const id = checkbox.getAttribute("data-session-id");
+    checkbox.checked = selectedSet.has(id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedSet.add(id);
+      } else {
+        selectedSet.delete(id);
+      }
+      renderSelectionMeta();
+    });
+  });
+
+  const selectedInRows = countSelectedRows(selectedSet, rows, "itemId");
+  dom.claudeCheckAll.checked = rows.length > 0 && selectedInRows === rows.length;
+  renderSelectionMeta();
 }
 
-function renderArchived() {
-  renderSessionView("archived");
-}
+/* ── render: Trash ────────────────────────────────────── */
 
 function renderTrash() {
   const rows = filteredTrash();
@@ -361,6 +446,7 @@ function renderTrash() {
     row.innerHTML = `
       <td><input type="checkbox" data-trash-id="${item.trashId}" /></td>
       <td>${trashExpiryPill(item.expired)}</td>
+      <td>${providerBadge(item.provider || "codex")}</td>
       <td title="${escapeHtml(item.threadId || "-")}">${escapeHtml(
       truncateText(item.threadId || "-", 16)
     )}</td>
@@ -370,7 +456,6 @@ function renderTrash() {
       <td title="${escapeHtml(item.originalRelativePath || "")}">${escapeHtml(
       truncateText(item.originalRelativePath || "-", 48)
     )}</td>
-      <td title="${escapeHtml(item.trashId)}">${escapeHtml(truncateText(item.trashId, 16))}</td>
     `;
     dom.trashBody.appendChild(row);
   }
@@ -393,46 +478,55 @@ function renderTrash() {
   renderSelectionMeta();
 }
 
+/* ── selection meta + button state ────────────────────── */
+
 function renderSelectionMeta() {
-  SESSION_VIEWS.active.selectionMeta.textContent = `${state.selected.active.size} selected / ${sessionCount(
-    "active"
-  )} active`;
-  SESSION_VIEWS.archived.selectionMeta.textContent = `${state.selected.archived.size} selected / ${sessionCount(
-    "archived"
-  )} archived`;
+  const codexTotal = codexSessions().length;
+  const claudeTotal = claudeSessions().length;
+
+  dom.codexSelectionMeta.textContent = `${state.selected.codex.size} selected / ${codexTotal} total`;
+  dom.claudeSelectionMeta.textContent = `${state.selected.claude.size} selected / ${claudeTotal} total`;
   dom.trashSelectionMeta.textContent = `${state.selected.trash.size} selected / ${state.trash.length} total`;
 
-  dom.activeActionArchive.disabled = state.selected.active.size === 0;
-  dom.activeActionDelete.disabled = state.selected.active.size === 0;
-  dom.archivedActionUnarchive.disabled = state.selected.archived.size === 0;
-  dom.archivedActionDelete.disabled = state.selected.archived.size === 0;
+  // Codex buttons: archive only for active, unarchive only for archived
+  const codexSelectedItems = codexSessions().filter((s) => state.selected.codex.has(s.itemId));
+  const hasActiveSelected = codexSelectedItems.some((s) => s.state === "active");
+  const hasArchivedSelected = codexSelectedItems.some((s) => s.state === "archived");
+
+  dom.codexActionArchive.disabled = !hasActiveSelected;
+  dom.codexActionUnarchive.disabled = !hasArchivedSelected;
+  dom.codexActionDelete.disabled = state.selected.codex.size === 0;
+
+  dom.claudeActionDelete.disabled = state.selected.claude.size === 0;
   dom.actionRestore.disabled = state.selected.trash.size === 0;
   dom.actionPurge.disabled = state.selected.trash.size === 0;
 }
 
 function renderTabCounts() {
-  const activeCount = sessionCount("active");
-  const archivedCount = sessionCount("archived");
+  const codexTotal = codexSessions().length;
+  const claudeTotal = claudeSessions().length;
   const trashCount = state.trash.length;
 
-  dom.tabActive.textContent = `Active (${activeCount})`;
-  dom.tabArchived.textContent = `Archived (${archivedCount})`;
+  dom.tabCodex.textContent = `Codex (${codexTotal})`;
+  dom.tabClaude.textContent = `Claude (${claudeTotal})`;
   dom.tabTrash.textContent = `Trash (${trashCount})`;
 }
 
 function sanitizeSelections() {
-  const activeIds = sessionIdSet("active");
-  const archivedIds = sessionIdSet("archived");
+  const codexIds = new Set(codexSessions().map((s) => s.itemId));
+  const claudeIds = new Set(claudeSessions().map((s) => s.itemId));
   const trashIds = new Set(state.trash.map((item) => item.trashId));
 
-  pruneSelectionSet(state.selected.active, activeIds);
-  pruneSelectionSet(state.selected.archived, archivedIds);
+  pruneSelectionSet(state.selected.codex, codexIds);
+  pruneSelectionSet(state.selected.claude, claudeIds);
   pruneSelectionSet(state.selected.trash, trashIds);
 }
 
+/* ── data loading ─────────────────────────────────────── */
+
 async function loadConfig() {
   state.config = await requestJson("/api/config");
-  dom.configInfo.textContent = `codex-home: ${state.config.codexHome} | trash: ${state.config.trashRoot} | retention: ${state.config.retentionDays} days`;
+  dom.configInfo.textContent = `codex-home: ${state.config.codexHome} | claude-home: ${state.config.claudeHome} | trash: ${state.config.trashRoot} | retention: ${state.config.retentionDays} days`;
 }
 
 async function loadSessions() {
@@ -447,8 +541,8 @@ async function loadTrash() {
 
 function renderAll() {
   renderTabCounts();
-  renderActive();
-  renderArchived();
+  renderCodex();
+  renderClaude();
   renderTrash();
 }
 
@@ -458,18 +552,38 @@ async function refreshAll() {
   renderAll();
 }
 
-async function runSessionAction(actionName, sourceView) {
-  const selectedSet = state.selected[sourceView];
-  const itemIds = Array.from(selectedSet);
+/* ── actions ──────────────────────────────────────────── */
+
+async function runCodexAction(actionName) {
+  const selectedSet = state.selected.codex;
+  let itemIds = Array.from(selectedSet);
   if (itemIds.length === 0) {
     showFeedback("No sessions selected.", "error");
     return;
   }
 
+  // For archive/unarchive, filter to only applicable items
+  if (actionName === "archive") {
+    const activeIds = new Set(codexSessions().filter((s) => s.state === "active").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => activeIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No active sessions selected to archive.", "error");
+      return;
+    }
+  }
+  if (actionName === "unarchive") {
+    const archivedIds = new Set(codexSessions().filter((s) => s.state === "archived").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => archivedIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No archived sessions selected to unarchive.", "error");
+      return;
+    }
+  }
+
   if (actionName === "delete") {
     const accepted = await requestConfirmation({
       title: "Move sessions to trash?",
-      message: `Move ${itemIds.length} ${sourceView} session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
+      message: `Move ${itemIds.length} Codex session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
       confirmLabel: "Move To Trash",
       cancelLabel: "Keep Sessions",
       danger: true
@@ -486,6 +600,38 @@ async function runSessionAction(actionName, sourceView) {
   });
 
   showFeedback(`${actionName}: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
+  selectedSet.clear();
+  await Promise.all([loadSessions(), loadTrash()]);
+  sanitizeSelections();
+  renderAll();
+}
+
+async function runClaudeDelete() {
+  const selectedSet = state.selected.claude;
+  const itemIds = Array.from(selectedSet);
+  if (itemIds.length === 0) {
+    showFeedback("No sessions selected.", "error");
+    return;
+  }
+
+  const accepted = await requestConfirmation({
+    title: "Move sessions to trash?",
+    message: `Move ${itemIds.length} Claude session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
+    confirmLabel: "Move To Trash",
+    cancelLabel: "Keep Sessions",
+    danger: true
+  });
+  if (!accepted) {
+    return;
+  }
+
+  const report = await requestJson("/api/sessions/delete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ itemIds })
+  });
+
+  showFeedback(`delete: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
   selectedSet.clear();
   await Promise.all([loadSessions(), loadTrash()]);
   sanitizeSelections();
@@ -530,41 +676,7 @@ async function runTrashAction(actionName) {
   renderAll();
 }
 
-function toError(error) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
-function bindSessionViewEvents(viewName) {
-  const view = SESSION_VIEWS[viewName];
-
-  view.query.addEventListener("input", (event) => {
-    state.queries[viewName] = event.target.value;
-    renderSessionView(viewName);
-  });
-
-  view.selectFiltered.addEventListener("click", () => {
-    applySelection(state.selected[viewName], filteredSessions(viewName), "itemId", true);
-    renderSessionView(viewName);
-  });
-
-  view.clearSelection.addEventListener("click", () => {
-    state.selected[viewName].clear();
-    renderSessionView(viewName);
-  });
-
-  view.checkAll.addEventListener("change", (event) => {
-    applySelection(
-      state.selected[viewName],
-      filteredSessions(viewName),
-      "itemId",
-      event.target.checked
-    );
-    renderSessionView(viewName);
-  });
-}
+/* ── event wiring ─────────────────────────────────────── */
 
 function wireEvents() {
   if (!state.confirmKeyListenerBound) {
@@ -581,10 +693,20 @@ function wireEvents() {
   dom.confirmCancel.addEventListener("click", () => closeConfirmModal(false));
   dom.confirmAccept.addEventListener("click", () => closeConfirmModal(true));
 
-  dom.tabActive.addEventListener("click", () => setCurrentView("active"));
-  dom.tabArchived.addEventListener("click", () => setCurrentView("archived"));
+  // Theme toggle
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const current = getStoredTheme() || "light";
+    const next = current === "dark" ? "light" : "dark";
+    setStoredTheme(next);
+    applyTheme(next);
+  });
+
+  // Tab switching
+  dom.tabCodex.addEventListener("click", () => setCurrentView("codex"));
+  dom.tabClaude.addEventListener("click", () => setCurrentView("claude"));
   dom.tabTrash.addEventListener("click", () => setCurrentView("trash"));
 
+  // Global actions
   dom.refreshAll.addEventListener("click", () => {
     refreshAll()
       .then(() => showFeedback("Refreshed.", "ok"))
@@ -603,29 +725,59 @@ function wireEvents() {
       .catch((error) => showFeedback(toError(error), "error"));
   });
 
-  bindSessionViewEvents("active");
-  bindSessionViewEvents("archived");
+  // Codex view
+  dom.codexQuery.addEventListener("input", (event) => {
+    state.queries.codex = event.target.value;
+    renderCodex();
+  });
+  dom.codexSelectFiltered.addEventListener("click", () => {
+    applySelection(state.selected.codex, filteredCodex(), "itemId", true);
+    renderCodex();
+  });
+  dom.codexClearSelection.addEventListener("click", () => {
+    state.selected.codex.clear();
+    renderCodex();
+  });
+  dom.codexCheckAll.addEventListener("change", (event) => {
+    applySelection(state.selected.codex, filteredCodex(), "itemId", event.target.checked);
+    renderCodex();
+  });
+  dom.codexActionArchive.addEventListener("click", () => {
+    runCodexAction("archive").catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.codexActionUnarchive.addEventListener("click", () => {
+    runCodexAction("unarchive").catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.codexActionDelete.addEventListener("click", () => {
+    runCodexAction("delete").catch((error) => showFeedback(toError(error), "error"));
+  });
 
+  // Claude view
+  dom.claudeQuery.addEventListener("input", (event) => {
+    state.queries.claude = event.target.value;
+    renderClaude();
+  });
+  dom.claudeSelectFiltered.addEventListener("click", () => {
+    applySelection(state.selected.claude, filteredClaude(), "itemId", true);
+    renderClaude();
+  });
+  dom.claudeClearSelection.addEventListener("click", () => {
+    state.selected.claude.clear();
+    renderClaude();
+  });
+  dom.claudeCheckAll.addEventListener("change", (event) => {
+    applySelection(state.selected.claude, filteredClaude(), "itemId", event.target.checked);
+    renderClaude();
+  });
+  dom.claudeActionDelete.addEventListener("click", () => {
+    runClaudeDelete().catch((error) => showFeedback(toError(error), "error"));
+  });
+
+  // Trash view
   dom.trashQuery.addEventListener("input", (event) => {
     state.queries.trash = event.target.value;
     renderTrash();
   });
-
-  dom.activeActionArchive.addEventListener("click", () => {
-    runSessionAction("archive", "active").catch((error) => showFeedback(toError(error), "error"));
-  });
-  dom.activeActionDelete.addEventListener("click", () => {
-    runSessionAction("delete", "active").catch((error) => showFeedback(toError(error), "error"));
-  });
-  dom.archivedActionUnarchive.addEventListener("click", () => {
-    runSessionAction("unarchive", "archived").catch((error) =>
-      showFeedback(toError(error), "error")
-    );
-  });
-  dom.archivedActionDelete.addEventListener("click", () => {
-    runSessionAction("delete", "archived").catch((error) => showFeedback(toError(error), "error"));
-  });
-
   dom.trashSelectFiltered.addEventListener("click", () => {
     applySelection(state.selected.trash, filteredTrash(), "trashId", true);
     renderTrash();
@@ -638,7 +790,6 @@ function wireEvents() {
     applySelection(state.selected.trash, filteredTrash(), "trashId", event.target.checked);
     renderTrash();
   });
-
   dom.actionRestore.addEventListener("click", () => {
     runTrashAction("restore").catch((error) => showFeedback(toError(error), "error"));
   });
@@ -648,5 +799,5 @@ function wireEvents() {
 }
 
 wireEvents();
-setCurrentView("active");
+setCurrentView("codex");
 refreshAll().catch((error) => showFeedback(toError(error), "error"));

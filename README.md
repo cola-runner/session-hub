@@ -1,14 +1,24 @@
-# Codex History Manager
+# Session Hub
 
-A local web tool for batch-managing Codex conversation history.
+A local web tool for batch-managing CLI conversation history from **Codex** and **Claude Code**.
 
 > Two install paths are supported:
 > 1) one-line shell installer (`curl`) for users without Homebrew
 > 2) Homebrew formula (optional)
 
-## Screenshot
+## Screenshots
 
-![Codex History Manager UI](./image.png)
+**Codex tab — light theme**
+
+![Codex sessions in light theme](./screenshot-codex-light.png)
+
+**Claude tab — light theme**
+
+![Claude sessions in light theme](./screenshot-claude-light.png)
+
+**Codex tab — dark theme**
+
+![Codex sessions in dark theme](./screenshot-codex-dark.png)
 
 ## Install (No Homebrew Required)
 
@@ -21,36 +31,41 @@ node -v
 Then install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
 ```
 
 Then start:
 
 ```bash
-codex-history start
+session-hub start
 ```
 
 ## Install with Homebrew (Optional)
 
 ```bash
-brew install cola-runner/tap/codex-history
+brew install cola-runner/tap/session-hub
 ```
 
 Then start:
 
 ```bash
-codex-history start
+session-hub start
 ```
 
-It helps you:
-- browse active and archived sessions
-- batch archive and unarchive
-- soft-delete sessions to trash
+## Features
+
+- **Multi-provider support** — manage sessions from both Codex and Claude Code
+- **Separate tabs** — Codex and Claude sessions are organized in dedicated tabs
+- browse active and archived Codex sessions
+- batch archive and unarchive Codex sessions
+- browse Claude Code sessions with project and branch info
+- soft-delete sessions to trash (both Codex and Claude)
 - restore or permanently purge trash items
 - auto-clean expired trash on startup
 - hide system-generated sessions automatically
+- **Light / Dark theme** — toggle between themes; preference is saved locally
 
-This is a community utility and is not affiliated with OpenAI.
+This is a community utility and is not affiliated with OpenAI or Anthropic.
 
 ## Quick Start
 
@@ -58,13 +73,13 @@ This is a community utility and is not affiliated with OpenAI.
 
 ```bash
 node -v
-curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
 ```
 
 ### 2) Start the app
 
 ```bash
-codex-history start
+session-hub start
 ```
 
 This starts a local server and opens the web UI.
@@ -72,9 +87,9 @@ This starts a local server and opens the web UI.
 ### 3) Manage sessions
 
 Use the tabs in the UI:
-- `Active`: archive or move sessions to trash
-- `Archived`: unarchive or move to trash
-- `Trash`: restore or permanently delete
+- **Codex**: archive, unarchive, or move sessions to trash
+- **Claude**: view sessions by project/branch, move to trash
+- **Trash**: restore or permanently delete (items from both providers)
 
 ## Requirements
 
@@ -86,19 +101,21 @@ Use the tabs in the UI:
 | Item | Default |
 | --- | --- |
 | Codex home | `~/.codex` |
-| Active sessions | `~/.codex/sessions` |
-| Archived sessions | `~/.codex/archived_sessions` |
+| Claude home | `~/.claude` |
+| Active Codex sessions | `~/.codex/sessions` |
+| Archived Codex sessions | `~/.codex/archived_sessions` |
+| Claude sessions | `~/.claude/projects/` |
 | Trash root | `~/.codex-trash` |
-| Local install dir | `~/.codex-history-manager` |
-| Launcher path | `~/.local/bin/codex-history` |
+| Local install dir | `~/.session-hub` |
+| Launcher path | `~/.local/bin/session-hub` |
 
 ## CLI Usage
 
 ```bash
-codex-history start [--codex-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
-codex-history cleanup [--codex-home PATH] [--trash-root PATH] [--retention-days N]
-codex-history install [--bin-dir PATH]
-codex-history uninstall [--bin-dir PATH]
+session-hub start [--codex-home PATH] [--claude-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
+session-hub cleanup [--codex-home PATH] [--trash-root PATH] [--retention-days N]
+session-hub install [--bin-dir PATH]
+session-hub uninstall [--bin-dir PATH]
 ```
 
 ### `start` flags
@@ -106,6 +123,7 @@ codex-history uninstall [--bin-dir PATH]
 | Flag | Description | Default |
 | --- | --- | --- |
 | `--codex-home` | Codex data directory | `~/.codex` |
+| `--claude-home` | Claude Code data directory | `~/.claude` |
 | `--trash-root` | Soft-delete storage root | `~/.codex-trash` |
 | `--retention-days` | Trash retention window | `30` |
 | `--port` | HTTP port (`0` = random free port) | `0` |
@@ -114,8 +132,9 @@ codex-history uninstall [--bin-dir PATH]
 Example:
 
 ```bash
-codex-history start \
+session-hub start \
   --codex-home ~/.codex \
+  --claude-home ~/.claude \
   --trash-root ~/.codex-trash \
   --retention-days 30 \
   --port 3789 \
@@ -125,7 +144,7 @@ codex-history start \
 ### Run cleanup only
 
 ```bash
-codex-history cleanup --retention-days 30
+session-hub cleanup --retention-days 30
 ```
 
 ## Install Options
@@ -136,16 +155,16 @@ Before using the installer, verify Node is available:
 
 ```bash
 node -v
-curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
 ```
 
 Optional install variables:
 
 ```bash
-CODEX_HISTORY_REPO=<owner/repo> \
-CODEX_HISTORY_REF=main \
-CODEX_HISTORY_BIN_DIR="$HOME/.local/bin" \
-CODEX_HISTORY_INSTALL_ROOT="$HOME/.codex-history-manager" \
+SESSION_HUB_REPO=<owner/repo> \
+SESSION_HUB_REF=main \
+SESSION_HUB_BIN_DIR="$HOME/.local/bin" \
+SESSION_HUB_INSTALL_ROOT="$HOME/.session-hub" \
 bash scripts/install.sh
 ```
 
@@ -154,7 +173,7 @@ Note: installer refuses unsafe install roots like `/` and `$HOME`.
 ### B) Homebrew (optional)
 
 ```bash
-brew install cola-runner/tap/codex-history
+brew install cola-runner/tap/session-hub
 ```
 
 ### C) Install from local source
@@ -165,14 +184,14 @@ node src/cli.js install
 
 ### D) Homebrew Formula Template
 
-Use `packaging/homebrew/codex-history.rb` as the formula template when publishing a tap.
+Use `packaging/homebrew/session-hub.rb` as the formula template when publishing a tap.
 
 ## Uninstall
 
 One-line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cola-runner/codex-history-manager/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/uninstall.sh | bash
 ```
 
 Local:

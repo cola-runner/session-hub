@@ -10,16 +10,17 @@ const { TrashStore } = require("./trash-store");
 
 function printHelp() {
   console.log(`
-codex-history
+session-hub
 
 Usage:
-  codex-history start [--codex-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
-  codex-history cleanup [--codex-home PATH] [--trash-root PATH] [--retention-days N]
-  codex-history install [--bin-dir PATH]
-  codex-history uninstall [--bin-dir PATH]
+  session-hub start [--codex-home PATH] [--claude-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
+  session-hub cleanup [--codex-home PATH] [--trash-root PATH] [--retention-days N]
+  session-hub install [--bin-dir PATH]
+  session-hub uninstall [--bin-dir PATH]
 
 Defaults:
   codex-home: ~/.codex
+  claude-home: ~/.claude
   trash-root: ~/.codex-trash
   retention-days: 30
 `);
@@ -59,11 +60,14 @@ function resolvePaths(flags) {
   const codexHome = path.resolve(
     String(flags["codex-home"] || process.env.CODEX_HOME || path.join(os.homedir(), ".codex"))
   );
+  const claudeHome = path.resolve(
+    String(flags["claude-home"] || process.env.CLAUDE_HOME || path.join(os.homedir(), ".claude"))
+  );
   const trashRoot = path.resolve(
     String(flags["trash-root"] || path.join(os.homedir(), ".codex-trash"))
   );
 
-  return { codexHome, trashRoot };
+  return { codexHome, claudeHome, trashRoot };
 }
 
 function parseIntFlag(value, fallbackValue) {
@@ -109,7 +113,7 @@ async function installBinary(flags) {
   );
   await ensureDir(binDir);
 
-  const launcherPath = path.join(binDir, "codex-history");
+  const launcherPath = path.join(binDir, "session-hub");
   const cliPath = path.resolve(__dirname, "cli.js");
   const script = `#!/usr/bin/env bash\nnode "${cliPath}" "$@"\n`;
 
@@ -119,7 +123,7 @@ async function installBinary(flags) {
   console.log(`Installed launcher: ${launcherPath}`);
   const pathParts = (process.env.PATH || "").split(path.delimiter);
   if (!pathParts.includes(binDir)) {
-    console.log(`PATH does not include ${binDir}. Add it to run codex-history directly.`);
+    console.log(`PATH does not include ${binDir}. Add it to run session-hub directly.`);
   }
 }
 
@@ -127,8 +131,8 @@ async function uninstallBinary(flags) {
   const binDir = path.resolve(
     String(flags["bin-dir"] || path.join(os.homedir(), ".local", "bin"))
   );
-  const launcherPath = path.join(binDir, "codex-history");
-  const legacyLauncherPath = path.join(binDir, "codex-session-tool");
+  const launcherPath = path.join(binDir, "session-hub");
+  const legacyLauncherPath = path.join(binDir, "codex-history");
 
   const removedPaths = [];
 
@@ -153,20 +157,22 @@ async function uninstallBinary(flags) {
 }
 
 async function runStart(flags) {
-  const { codexHome, trashRoot } = resolvePaths(flags);
+  const { codexHome, claudeHome, trashRoot } = resolvePaths(flags);
   const retentionDays = parseIntFlag(flags["retention-days"], 30);
   const port = parseIntFlag(flags.port, 0);
   const shouldOpenBrowser = !Boolean(flags["no-open"]);
 
   const running = await startServer({
     codexHome,
+    claudeHome,
     trashRoot,
     retentionDays,
     port
   });
 
-  console.log(`Codex History Manager is running on ${running.url}`);
+  console.log(`Session Hub is running on ${running.url}`);
   console.log(`codex-home: ${codexHome}`);
+  console.log(`claude-home: ${claudeHome}`);
   console.log(`trash-root: ${trashRoot} (retention: ${retentionDays} days)`);
   console.log(
     `expired cleanup at startup: ${running.cleanupReport.succeeded.length} deleted, ${running.cleanupReport.failed.length} failed`

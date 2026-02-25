@@ -30,9 +30,10 @@ class TrashStore {
     await ensureDir(this.itemsRoot);
   }
 
-  async trashSessionItem(item) {
+  async trashSessionItem(item, homeRoot) {
     await this.init();
 
+    const effectiveHomeRoot = homeRoot || this.codexHome;
     const trashId = createTrashId();
     const itemRoot = path.join(this.itemsRoot, trashId);
     const payloadRelativePath = normalizeRelativePath(path.join("payload", item.relativePath));
@@ -53,7 +54,9 @@ class TrashStore {
       payloadRelativePath,
       sizeBytes: item.sizeBytes,
       deletedAt,
-      expiresAt
+      expiresAt,
+      provider: item.provider || "codex",
+      homeRoot: effectiveHomeRoot
     };
 
     await fs.writeFile(
@@ -171,8 +174,9 @@ class TrashStore {
       throw new Error("trash payload is missing");
     }
 
+    const restoreHomeRoot = metadata.homeRoot || this.codexHome;
     const restoreAbsolutePath = resolvePathWithinRoot(
-      this.codexHome,
+      restoreHomeRoot,
       metadata.originalRelativePath,
       "restore target path"
     );
@@ -186,7 +190,7 @@ class TrashStore {
 
     return {
       trashId,
-      restoredTo: normalizeRelativePath(path.relative(this.codexHome, restoreAbsolutePath))
+      restoredTo: normalizeRelativePath(path.relative(restoreHomeRoot, restoreAbsolutePath))
     };
   }
 
