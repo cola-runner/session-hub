@@ -39,11 +39,18 @@ const state = {
   queries: {
     codex: "",
     claude: "",
+    gemini: "",
     trash: ""
+  },
+  stateFilter: {
+    codex: "all",
+    claude: "all",
+    gemini: "all"
   },
   selected: {
     codex: new Set(),
     claude: new Set(),
+    gemini: new Set(),
     trash: new Set()
   },
   confirmResolve: null,
@@ -59,10 +66,12 @@ const dom = {
 
   tabCodex: document.getElementById("tab-codex"),
   tabClaude: document.getElementById("tab-claude"),
+  tabGemini: document.getElementById("tab-gemini"),
   tabTrash: document.getElementById("tab-trash"),
 
   viewCodex: document.getElementById("view-codex"),
   viewClaude: document.getElementById("view-claude"),
+  viewGemini: document.getElementById("view-gemini"),
   viewTrash: document.getElementById("view-trash"),
 
   codexQuery: document.getElementById("codex-query"),
@@ -81,7 +90,19 @@ const dom = {
   claudeSelectionMeta: document.getElementById("claude-selection-meta"),
   claudeCheckAll: document.getElementById("claude-check-all"),
   claudeBody: document.getElementById("claude-body"),
+  claudeActionArchive: document.getElementById("claude-action-archive"),
+  claudeActionUnarchive: document.getElementById("claude-action-unarchive"),
   claudeActionDelete: document.getElementById("claude-action-delete"),
+
+  geminiQuery: document.getElementById("gemini-query"),
+  geminiSelectFiltered: document.getElementById("gemini-select-filtered"),
+  geminiClearSelection: document.getElementById("gemini-clear-selection"),
+  geminiSelectionMeta: document.getElementById("gemini-selection-meta"),
+  geminiCheckAll: document.getElementById("gemini-check-all"),
+  geminiBody: document.getElementById("gemini-body"),
+  geminiActionArchive: document.getElementById("gemini-action-archive"),
+  geminiActionUnarchive: document.getElementById("gemini-action-unarchive"),
+  geminiActionDelete: document.getElementById("gemini-action-delete"),
 
   trashQuery: document.getElementById("trash-query"),
   trashSelectFiltered: document.getElementById("trash-select-filtered"),
@@ -154,6 +175,9 @@ function statePill(sessionState) {
 function providerBadge(provider) {
   if (provider === "claude") {
     return `<span class="pill claude">Claude</span>`;
+  }
+  if (provider === "gemini") {
+    return `<span class="pill gemini">Gemini</span>`;
   }
   return `<span class="pill codex">Codex</span>`;
 }
@@ -266,7 +290,11 @@ function claudeSessions() {
 
 function filteredCodex() {
   const query = state.queries.codex.trim().toLowerCase();
+  const stateF = state.stateFilter.codex;
   return codexSessions().filter((session) => {
+    if (stateF !== "all" && session.state !== stateF) {
+      return false;
+    }
     if (!query) {
       return true;
     }
@@ -279,12 +307,37 @@ function filteredCodex() {
 
 function filteredClaude() {
   const query = state.queries.claude.trim().toLowerCase();
+  const stateF = state.stateFilter.claude;
   return claudeSessions().filter((session) => {
+    if (stateF !== "all" && session.state !== stateF) {
+      return false;
+    }
     if (!query) {
       return true;
     }
     const text = `${session.title || ""} ${session.threadId} ${session.projectName || ""} ${
       session.gitBranch || ""
+    } ${session.state}`.toLowerCase();
+    return text.includes(query);
+  });
+}
+
+function geminiSessions() {
+  return state.sessions.filter((s) => s.provider === "gemini");
+}
+
+function filteredGemini() {
+  const query = state.queries.gemini.trim().toLowerCase();
+  const stateF = state.stateFilter.gemini;
+  return geminiSessions().filter((session) => {
+    if (stateF !== "all" && session.state !== stateF) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const text = `${session.title || ""} ${session.threadId} ${session.projectHash || ""} ${
+      session.state
     }`.toLowerCase();
     return text.includes(query);
   });
@@ -311,14 +364,17 @@ function setCurrentView(viewName) {
 
   dom.viewCodex.classList.toggle("hidden", viewName !== "codex");
   dom.viewClaude.classList.toggle("hidden", viewName !== "claude");
+  dom.viewGemini.classList.toggle("hidden", viewName !== "gemini");
   dom.viewTrash.classList.toggle("hidden", viewName !== "trash");
 
   dom.tabCodex.classList.toggle("active", viewName === "codex");
   dom.tabClaude.classList.toggle("active", viewName === "claude");
+  dom.tabGemini.classList.toggle("active", viewName === "gemini");
   dom.tabTrash.classList.toggle("active", viewName === "trash");
 
   dom.tabCodex.setAttribute("aria-selected", String(viewName === "codex"));
   dom.tabClaude.setAttribute("aria-selected", String(viewName === "claude"));
+  dom.tabGemini.setAttribute("aria-selected", String(viewName === "gemini"));
   dom.tabTrash.setAttribute("aria-selected", String(viewName === "trash"));
 }
 
@@ -409,6 +465,7 @@ function renderClaude() {
     row.innerHTML = `
       <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
       <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+      <td>${statePill(session.state)}</td>
       <td title="${escapeHtml(project)}">${escapeHtml(truncateText(project, 30))}</td>
       <td>${escapeHtml(truncateText(branch, 20))}</td>
       <td>${formatDate(session.updatedAt)}</td>
@@ -432,6 +489,49 @@ function renderClaude() {
 
   const selectedInRows = countSelectedRows(selectedSet, rows, "itemId");
   dom.claudeCheckAll.checked = rows.length > 0 && selectedInRows === rows.length;
+  renderSelectionMeta();
+}
+
+/* ── render: Gemini ───────────────────────────────────── */
+
+function renderGemini() {
+  const rows = filteredGemini();
+  const selectedSet = state.selected.gemini;
+
+  dom.geminiBody.innerHTML = "";
+  for (const session of rows) {
+    const title = session.title || "Untitled session";
+    const displayTitle = truncateText(title, 62);
+    const hash = session.projectHash || "-";
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+      <td>${statePill(session.state)}</td>
+      <td title="${escapeHtml(hash)}">${escapeHtml(truncateText(hash, 16))}</td>
+      <td>${session.messageCount || 0}</td>
+      <td>${formatDate(session.updatedAt)}</td>
+      <td>${formatBytes(session.sizeBytes)}</td>
+    `;
+    dom.geminiBody.appendChild(row);
+  }
+
+  dom.geminiBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+    const id = checkbox.getAttribute("data-session-id");
+    checkbox.checked = selectedSet.has(id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedSet.add(id);
+      } else {
+        selectedSet.delete(id);
+      }
+      renderSelectionMeta();
+    });
+  });
+
+  const selectedInRows = countSelectedRows(selectedSet, rows, "itemId");
+  dom.geminiCheckAll.checked = rows.length > 0 && selectedInRows === rows.length;
   renderSelectionMeta();
 }
 
@@ -483,9 +583,11 @@ function renderTrash() {
 function renderSelectionMeta() {
   const codexTotal = codexSessions().length;
   const claudeTotal = claudeSessions().length;
+  const geminiTotal = geminiSessions().length;
 
   dom.codexSelectionMeta.textContent = `${state.selected.codex.size} selected / ${codexTotal} total`;
   dom.claudeSelectionMeta.textContent = `${state.selected.claude.size} selected / ${claudeTotal} total`;
+  dom.geminiSelectionMeta.textContent = `${state.selected.gemini.size} selected / ${geminiTotal} total`;
   dom.trashSelectionMeta.textContent = `${state.selected.trash.size} selected / ${state.trash.length} total`;
 
   // Codex buttons: archive only for active, unarchive only for archived
@@ -497,28 +599,73 @@ function renderSelectionMeta() {
   dom.codexActionUnarchive.disabled = !hasArchivedSelected;
   dom.codexActionDelete.disabled = state.selected.codex.size === 0;
 
+  const claudeSelectedItems = claudeSessions().filter((s) => state.selected.claude.has(s.itemId));
+  const hasClaudeActiveSelected = claudeSelectedItems.some((s) => s.state === "active");
+  const hasClaudeArchivedSelected = claudeSelectedItems.some((s) => s.state === "archived");
+
+  dom.claudeActionArchive.disabled = !hasClaudeActiveSelected;
+  dom.claudeActionUnarchive.disabled = !hasClaudeArchivedSelected;
   dom.claudeActionDelete.disabled = state.selected.claude.size === 0;
+
+  const geminiSelectedItems = geminiSessions().filter((s) => state.selected.gemini.has(s.itemId));
+  const hasGeminiActiveSelected = geminiSelectedItems.some((s) => s.state === "active");
+  const hasGeminiArchivedSelected = geminiSelectedItems.some((s) => s.state === "archived");
+
+  dom.geminiActionArchive.disabled = !hasGeminiActiveSelected;
+  dom.geminiActionUnarchive.disabled = !hasGeminiArchivedSelected;
+  dom.geminiActionDelete.disabled = state.selected.gemini.size === 0;
+
   dom.actionRestore.disabled = state.selected.trash.size === 0;
   dom.actionPurge.disabled = state.selected.trash.size === 0;
 }
 
 function renderTabCounts() {
-  const codexTotal = codexSessions().length;
-  const claudeTotal = claudeSessions().length;
+  const codexAll = codexSessions();
+  const claudeAll = claudeSessions();
+  const geminiAll = geminiSessions();
+  const codexActive = codexAll.filter((s) => s.state === "active").length;
+  const codexArchived = codexAll.filter((s) => s.state === "archived").length;
+  const claudeActive = claudeAll.filter((s) => s.state === "active").length;
+  const claudeArchived = claudeAll.filter((s) => s.state === "archived").length;
+  const geminiActive = geminiAll.filter((s) => s.state === "active").length;
+  const geminiArchived = geminiAll.filter((s) => s.state === "archived").length;
   const trashCount = state.trash.length;
 
-  dom.tabCodex.textContent = `Codex (${codexTotal})`;
-  dom.tabClaude.textContent = `Claude (${claudeTotal})`;
+  dom.tabCodex.textContent = `Codex (${codexAll.length})`;
+  dom.tabClaude.textContent = `Claude (${claudeAll.length})`;
+  dom.tabGemini.textContent = `Gemini (${geminiAll.length})`;
   dom.tabTrash.textContent = `Trash (${trashCount})`;
+
+  // Update state filter button labels with counts
+  document.querySelectorAll("[data-filter=codex]").forEach((btn) => {
+    const s = btn.getAttribute("data-state");
+    if (s === "all") btn.textContent = `All (${codexAll.length})`;
+    else if (s === "active") btn.textContent = `Active (${codexActive})`;
+    else if (s === "archived") btn.textContent = `Archived (${codexArchived})`;
+  });
+  document.querySelectorAll("[data-filter=claude]").forEach((btn) => {
+    const s = btn.getAttribute("data-state");
+    if (s === "all") btn.textContent = `All (${claudeAll.length})`;
+    else if (s === "active") btn.textContent = `Active (${claudeActive})`;
+    else if (s === "archived") btn.textContent = `Archived (${claudeArchived})`;
+  });
+  document.querySelectorAll("[data-filter=gemini]").forEach((btn) => {
+    const s = btn.getAttribute("data-state");
+    if (s === "all") btn.textContent = `All (${geminiAll.length})`;
+    else if (s === "active") btn.textContent = `Active (${geminiActive})`;
+    else if (s === "archived") btn.textContent = `Archived (${geminiArchived})`;
+  });
 }
 
 function sanitizeSelections() {
   const codexIds = new Set(codexSessions().map((s) => s.itemId));
   const claudeIds = new Set(claudeSessions().map((s) => s.itemId));
+  const geminiIds = new Set(geminiSessions().map((s) => s.itemId));
   const trashIds = new Set(state.trash.map((item) => item.trashId));
 
   pruneSelectionSet(state.selected.codex, codexIds);
   pruneSelectionSet(state.selected.claude, claudeIds);
+  pruneSelectionSet(state.selected.gemini, geminiIds);
   pruneSelectionSet(state.selected.trash, trashIds);
 }
 
@@ -526,7 +673,7 @@ function sanitizeSelections() {
 
 async function loadConfig() {
   state.config = await requestJson("/api/config");
-  dom.configInfo.textContent = `codex-home: ${state.config.codexHome} | claude-home: ${state.config.claudeHome} | trash: ${state.config.trashRoot} | retention: ${state.config.retentionDays} days`;
+  dom.configInfo.textContent = `codex-home: ${state.config.codexHome} | claude-home: ${state.config.claudeHome} | gemini-home: ${state.config.geminiHome} | trash: ${state.config.trashRoot} | retention: ${state.config.retentionDays} days`;
 }
 
 async function loadSessions() {
@@ -543,6 +690,7 @@ function renderAll() {
   renderTabCounts();
   renderCodex();
   renderClaude();
+  renderGemini();
   renderTrash();
 }
 
@@ -606,32 +754,102 @@ async function runCodexAction(actionName) {
   renderAll();
 }
 
-async function runClaudeDelete() {
+async function runClaudeAction(actionName) {
   const selectedSet = state.selected.claude;
-  const itemIds = Array.from(selectedSet);
+  let itemIds = Array.from(selectedSet);
   if (itemIds.length === 0) {
     showFeedback("No sessions selected.", "error");
     return;
   }
 
-  const accepted = await requestConfirmation({
-    title: "Move sessions to trash?",
-    message: `Move ${itemIds.length} Claude session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
-    confirmLabel: "Move To Trash",
-    cancelLabel: "Keep Sessions",
-    danger: true
-  });
-  if (!accepted) {
-    return;
+  if (actionName === "archive") {
+    const activeIds = new Set(claudeSessions().filter((s) => s.state === "active").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => activeIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No active sessions selected to archive.", "error");
+      return;
+    }
+  }
+  if (actionName === "unarchive") {
+    const archivedIds = new Set(claudeSessions().filter((s) => s.state === "archived").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => archivedIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No archived sessions selected to unarchive.", "error");
+      return;
+    }
   }
 
-  const report = await requestJson("/api/sessions/delete", {
+  if (actionName === "delete") {
+    const accepted = await requestConfirmation({
+      title: "Move sessions to trash?",
+      message: `Move ${itemIds.length} Claude session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
+      confirmLabel: "Move To Trash",
+      cancelLabel: "Keep Sessions",
+      danger: true
+    });
+    if (!accepted) {
+      return;
+    }
+  }
+
+  const report = await requestJson(`/api/sessions/${actionName}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ itemIds })
   });
 
-  showFeedback(`delete: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
+  showFeedback(`${actionName}: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
+  selectedSet.clear();
+  await Promise.all([loadSessions(), loadTrash()]);
+  sanitizeSelections();
+  renderAll();
+}
+
+async function runGeminiAction(actionName) {
+  const selectedSet = state.selected.gemini;
+  let itemIds = Array.from(selectedSet);
+  if (itemIds.length === 0) {
+    showFeedback("No sessions selected.", "error");
+    return;
+  }
+
+  if (actionName === "archive") {
+    const activeIds = new Set(geminiSessions().filter((s) => s.state === "active").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => activeIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No active sessions selected to archive.", "error");
+      return;
+    }
+  }
+  if (actionName === "unarchive") {
+    const archivedIds = new Set(geminiSessions().filter((s) => s.state === "archived").map((s) => s.itemId));
+    itemIds = itemIds.filter((id) => archivedIds.has(id));
+    if (itemIds.length === 0) {
+      showFeedback("No archived sessions selected to unarchive.", "error");
+      return;
+    }
+  }
+
+  if (actionName === "delete") {
+    const accepted = await requestConfirmation({
+      title: "Move sessions to trash?",
+      message: `Move ${itemIds.length} Gemini session(s) to trash?\n\nThis is a soft delete and can be restored until expiration.`,
+      confirmLabel: "Move To Trash",
+      cancelLabel: "Keep Sessions",
+      danger: true
+    });
+    if (!accepted) {
+      return;
+    }
+  }
+
+  const report = await requestJson(`/api/sessions/${actionName}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ itemIds })
+  });
+
+  showFeedback(`${actionName}: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
   selectedSet.clear();
   await Promise.all([loadSessions(), loadTrash()]);
   sanitizeSelections();
@@ -704,6 +922,7 @@ function wireEvents() {
   // Tab switching
   dom.tabCodex.addEventListener("click", () => setCurrentView("codex"));
   dom.tabClaude.addEventListener("click", () => setCurrentView("claude"));
+  dom.tabGemini.addEventListener("click", () => setCurrentView("gemini"));
   dom.tabTrash.addEventListener("click", () => setCurrentView("trash"));
 
   // Global actions
@@ -723,6 +942,20 @@ function wireEvents() {
         return refreshAll();
       })
       .catch((error) => showFeedback(toError(error), "error"));
+  });
+
+  // State filter buttons
+  document.querySelectorAll(".state-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const filterGroup = btn.getAttribute("data-filter");
+      const filterState = btn.getAttribute("data-state");
+      state.stateFilter[filterGroup] = filterState;
+      btn.parentElement.querySelectorAll(".state-filter-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      if (filterGroup === "codex") renderCodex();
+      else if (filterGroup === "claude") renderClaude();
+      else if (filterGroup === "gemini") renderGemini();
+    });
   });
 
   // Codex view
@@ -769,8 +1002,41 @@ function wireEvents() {
     applySelection(state.selected.claude, filteredClaude(), "itemId", event.target.checked);
     renderClaude();
   });
+  dom.claudeActionArchive.addEventListener("click", () => {
+    runClaudeAction("archive").catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.claudeActionUnarchive.addEventListener("click", () => {
+    runClaudeAction("unarchive").catch((error) => showFeedback(toError(error), "error"));
+  });
   dom.claudeActionDelete.addEventListener("click", () => {
-    runClaudeDelete().catch((error) => showFeedback(toError(error), "error"));
+    runClaudeAction("delete").catch((error) => showFeedback(toError(error), "error"));
+  });
+
+  // Gemini view
+  dom.geminiQuery.addEventListener("input", (event) => {
+    state.queries.gemini = event.target.value;
+    renderGemini();
+  });
+  dom.geminiSelectFiltered.addEventListener("click", () => {
+    applySelection(state.selected.gemini, filteredGemini(), "itemId", true);
+    renderGemini();
+  });
+  dom.geminiClearSelection.addEventListener("click", () => {
+    state.selected.gemini.clear();
+    renderGemini();
+  });
+  dom.geminiCheckAll.addEventListener("change", (event) => {
+    applySelection(state.selected.gemini, filteredGemini(), "itemId", event.target.checked);
+    renderGemini();
+  });
+  dom.geminiActionArchive.addEventListener("click", () => {
+    runGeminiAction("archive").catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.geminiActionUnarchive.addEventListener("click", () => {
+    runGeminiAction("unarchive").catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.geminiActionDelete.addEventListener("click", () => {
+    runGeminiAction("delete").catch((error) => showFeedback(toError(error), "error"));
   });
 
   // Trash view

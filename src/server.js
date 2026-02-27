@@ -4,6 +4,7 @@ const path = require("node:path");
 const { isPathInsideRoot } = require("./fs-utils");
 const { SessionStore } = require("./session-store");
 const { ClaudeSessionStore, isClaudeItemId } = require("./claude-session-store");
+const { GeminiSessionStore, isGeminiItemId } = require("./gemini-session-store");
 const { TrashStore } = require("./trash-store");
 
 const WEB_ROOT = path.join(__dirname, "..", "web");
@@ -92,31 +93,35 @@ async function serveStatic(requestPath, response) {
   }
 }
 
-async function findItemAcrossStores(itemIds, codexStore, claudeStore) {
+async function findItemAcrossStores(itemIds, codexStore, claudeStore, geminiStore) {
   const codexIds = [];
   const claudeIds = [];
+  const geminiIds = [];
 
   for (const itemId of itemIds) {
     if (isClaudeItemId(itemId)) {
       claudeIds.push(itemId);
+    } else if (isGeminiItemId(itemId)) {
+      geminiIds.push(itemId);
     } else {
       codexIds.push(itemId);
     }
   }
 
-  const [codexResult, claudeResult] = await Promise.all([
+  const [codexResult, claudeResult, geminiResult] = await Promise.all([
     codexIds.length > 0 ? codexStore.findItemsByIds(codexIds) : { found: [], missing: [] },
-    claudeIds.length > 0 ? claudeStore.findItemsByIds(claudeIds) : { found: [], missing: [] }
+    claudeIds.length > 0 ? claudeStore.findItemsByIds(claudeIds) : { found: [], missing: [] },
+    geminiIds.length > 0 ? geminiStore.findItemsByIds(geminiIds) : { found: [], missing: [] }
   ]);
 
   return {
-    found: codexResult.found.concat(claudeResult.found),
-    missing: codexResult.missing.concat(claudeResult.missing)
+    found: codexResult.found.concat(claudeResult.found).concat(geminiResult.found),
+    missing: codexResult.missing.concat(claudeResult.missing).concat(geminiResult.missing)
   };
 }
 
-async function runMultiSourceBatch(itemIds, codexStore, claudeStore, action) {
-  const selection = await findItemAcrossStores(itemIds, codexStore, claudeStore);
+async function runMultiSourceBatch(itemIds, codexStore, claudeStore, geminiStore, action) {
+  const selection = await findItemAcrossStores(itemIds, codexStore, claudeStore, geminiStore);
   const report = {
     requested: itemIds.length,
     succeeded: [],
@@ -192,12 +197,14 @@ async function runSessionBatch(itemIds, sessionStore, action) {
 async function startServer({
   codexHome,
   claudeHome,
+  geminiHome,
   trashRoot,
   retentionDays = 30,
   port = 0
 }) {
   const sessionStore = new SessionStore({ codexHome });
   const claudeStore = new ClaudeSessionStore({ claudeHome });
+  const geminiStore = new GeminiSessionStore({ geminiHome });
   const trashStore = new TrashStore({ codexHome, trashRoot, retentionDays });
   const cleanupReport = await trashStore.cleanupExpired();
 
@@ -219,6 +226,7 @@ async function startServer({
         json(response, 200, {
           codexHome,
           claudeHome,
+          geminiHome,
           trashRoot,
           retentionDays
         });
@@ -226,9 +234,10 @@ async function startServer({
       }
 
       if (request.method === "GET" && pathname === "/api/sessions") {
-        const [codexResult, claudeResult] = await Promise.all([
+        const [codexResult, claudeResult, geminiResult] = await Promise.all([
           sessionStore.listSessions(),
-          claudeStore.listSessions()
+          claudeStore.listSessions(),
+          geminiStore.listSessions()
         ]);
 
         const codexItems = codexResult.items.map((item) => ({
@@ -236,8 +245,9 @@ async function startServer({
           provider: "codex"
         }));
         const claudeItems = claudeResult.items;
+        const geminiItems = geminiResult.items;
 
-        const merged = codexItems.concat(claudeItems).sort((left, right) => {
+        const merged = codexItems.concat(claudeItems).concat(geminiItems).sort((left, right) => {
           const leftTime = Date.parse(left.updatedAt) || 0;
           const rightTime = Date.parse(right.updatedAt) || 0;
           return rightTime - leftTime;
@@ -257,13 +267,20 @@ async function startServer({
       if (request.method === "POST" && pathname === "/api/sessions/archive") {
         const payload = await readJsonBody(request);
         const itemIds = parseStringArrayField(payload, "itemIds");
-        const claudeIds = itemIds.filter((id) => isClaudeItemId(id));
-        if (claudeIds.length > 0) {
-          json(response, 400, { error: "archive is not supported for Claude sessions" });
-          return;
-        }
-        const report = await runSessionBatch(itemIds, sessionStore, (item) =>
-          sessionStore.archiveItem(item)
+        const report = await runMultiSourceBatch(
+          itemIds,
+          sessionStore,
+          claudeStore,
+          geminiStore,
+          (item) => {
+            if (item.provider === "claude") {
+              return claudeStore.archiveItem(item);
+            }
+            if (item.provider === "gemini") {
+              return geminiStore.archiveItem(item);
+            }
+            return sessionStore.archiveItem(item);
+          }
         );
         json(response, 200, report);
         return;
@@ -272,13 +289,20 @@ async function startServer({
       if (request.method === "POST" && pathname === "/api/sessions/unarchive") {
         const payload = await readJsonBody(request);
         const itemIds = parseStringArrayField(payload, "itemIds");
-        const claudeIds = itemIds.filter((id) => isClaudeItemId(id));
-        if (claudeIds.length > 0) {
-          json(response, 400, { error: "unarchive is not supported for Claude sessions" });
-          return;
-        }
-        const report = await runSessionBatch(itemIds, sessionStore, (item) =>
-          sessionStore.unarchiveItem(item)
+        const report = await runMultiSourceBatch(
+          itemIds,
+          sessionStore,
+          claudeStore,
+          geminiStore,
+          (item) => {
+            if (item.provider === "claude") {
+              return claudeStore.unarchiveItem(item);
+            }
+            if (item.provider === "gemini") {
+              return geminiStore.unarchiveItem(item);
+            }
+            return sessionStore.unarchiveItem(item);
+          }
         );
         json(response, 200, report);
         return;
@@ -291,8 +315,11 @@ async function startServer({
           itemIds,
           sessionStore,
           claudeStore,
+          geminiStore,
           (item) => {
-            const homeRoot = item.provider === "claude" ? claudeHome : codexHome;
+            const homeRoot = item.provider === "claude" ? claudeHome
+              : item.provider === "gemini" ? geminiHome
+              : codexHome;
             return trashStore.trashSessionItem(item, homeRoot);
           }
         );
@@ -351,6 +378,7 @@ async function startServer({
     cleanupReport,
     codexHome,
     claudeHome,
+    geminiHome,
     port: address.port,
     retentionDays,
     server,

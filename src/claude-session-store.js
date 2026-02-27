@@ -2,6 +2,7 @@ const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const readline = require("node:readline");
+const { ensureDir, movePath, normalizeRelativePath, pathExists } = require("./fs-utils");
 
 const MAX_TITLE_SCAN_LINES = 50;
 
@@ -102,17 +103,84 @@ class ClaudeSessionStore {
   constructor({ claudeHome }) {
     this.claudeHome = claudeHome;
     this.projectsRoot = path.join(claudeHome, "projects");
+    this.archivedRoot = path.join(claudeHome, "archived_sessions");
     this.titleCache = new Map();
   }
 
   async listSessions() {
+    const [active, archived] = await Promise.all([
+      this.#scanRoot(this.projectsRoot, "active"),
+      this.#scanRoot(this.archivedRoot, "archived")
+    ]);
+
+    const items = active.concat(archived)
+      .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
+
+    const livePaths = new Set(items.map((item) => item.absolutePath));
+    for (const cachedPath of this.titleCache.keys()) {
+      if (!livePaths.has(cachedPath)) {
+        this.titleCache.delete(cachedPath);
+      }
+    }
+
+    const result = items.map(({ updatedAtEpochMs, ...item }) => item);
+
+    return {
+      items: result,
+      counts: {
+        total: result.length,
+        active: active.length,
+        archived: archived.length
+      }
+    };
+  }
+
+  async archiveItem(item) {
+    if (item.state !== "active") {
+      throw new Error("only active sessions can be archived");
+    }
+
+    const relativeFromRoot = path.relative(this.projectsRoot, item.absolutePath);
+    const destinationPath = path.join(this.archivedRoot, relativeFromRoot);
+    if (await pathExists(destinationPath)) {
+      throw new Error("archived destination already exists");
+    }
+
+    await ensureDir(path.dirname(destinationPath));
+    await movePath(item.absolutePath, destinationPath);
+    return {
+      from: item.relativePath,
+      to: normalizeRelativePath(path.relative(this.claudeHome, destinationPath))
+    };
+  }
+
+  async unarchiveItem(item) {
+    if (item.state !== "archived") {
+      throw new Error("only archived sessions can be restored to active");
+    }
+
+    const relativeFromRoot = path.relative(this.archivedRoot, item.absolutePath);
+    const destinationPath = path.join(this.projectsRoot, relativeFromRoot);
+    if (await pathExists(destinationPath)) {
+      throw new Error("active destination already exists");
+    }
+
+    await ensureDir(path.dirname(destinationPath));
+    await movePath(item.absolutePath, destinationPath);
+    return {
+      from: item.relativePath,
+      to: normalizeRelativePath(path.relative(this.claudeHome, destinationPath))
+    };
+  }
+
+  async #scanRoot(rootPath, state) {
     let projectDirs;
     try {
-      const entries = await fs.readdir(this.projectsRoot, { withFileTypes: true });
+      const entries = await fs.readdir(rootPath, { withFileTypes: true });
       projectDirs = entries.filter((entry) => entry.isDirectory());
     } catch (error) {
       if (error && error.code === "ENOENT") {
-        return { items: [], counts: { total: 0 } };
+        return [];
       }
       throw error;
     }
@@ -120,7 +188,7 @@ class ClaudeSessionStore {
     const items = [];
 
     for (const projectDir of projectDirs) {
-      const projectPath = path.join(this.projectsRoot, projectDir.name);
+      const projectPath = path.join(rootPath, projectDir.name);
       const projectName = decodeProjectName(projectDir.name);
 
       let files;
@@ -158,7 +226,7 @@ class ClaudeSessionStore {
           threadId: sessionId,
           title: meta.title || `Untitled ${sessionId.slice(0, 8)}`,
           fileName: file.name,
-          state: "active",
+          state,
           provider: "claude",
           absolutePath,
           relativePath,
@@ -173,21 +241,7 @@ class ClaudeSessionStore {
       }
     }
 
-    items.sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
-
-    const livePaths = new Set(items.map((item) => item.absolutePath));
-    for (const cachedPath of this.titleCache.keys()) {
-      if (!livePaths.has(cachedPath)) {
-        this.titleCache.delete(cachedPath);
-      }
-    }
-
-    const result = items.map(({ updatedAtEpochMs, ...item }) => item);
-
-    return {
-      items: result,
-      counts: { total: result.length }
-    };
+    return items;
   }
 
   async findItemsByIds(itemIds) {

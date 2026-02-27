@@ -24,11 +24,13 @@
   --accent-soft: rgba(42, 108, 182, 0.06);
   --accent-mid: rgba(42, 108, 182, 0.18);
 
-  /* header */
-  --header-bg: #1e293b;
-  --header-border: #2a6cb6;
-  --header-text-dim: rgba(255, 255, 255, 0.45);
-  --header-config: rgba(255, 255, 255, 0.3);
+  /* header — light */
+  --header-bg: #ffffff;
+  --header-border: #e0e0e0;
+  --header-text-dim: #888;
+  --header-config: #aaa;
+  --header-title: #111;
+  --header-eyebrow: var(--accent);
 
   /* status */
   --danger: #c44133;
@@ -73,10 +75,12 @@
   --accent-soft: rgba(212, 160, 23, 0.08);
   --accent-mid: rgba(212, 160, 23, 0.2);
 
-  --header-bg: #000;
+  --header-bg: #0a0a0a;
   --header-border: #d4a017;
   --header-text-dim: rgba(255, 255, 255, 0.55);
   --header-config: rgba(255, 255, 255, 0.18);
+  --header-title: #fff;
+  --header-eyebrow: var(--accent);
 
   --danger: #c44133;
   --danger-soft: rgba(196, 65, 51, 0.08);
@@ -138,7 +142,6 @@ body {
   border-bottom: 1px solid var(--header-border);
   border-radius: 0;
   padding: 2.25rem 2rem 1.5rem;
-  box-shadow: 0 1px 0 var(--accent-mid);
 }
 
 .top-actions {
@@ -149,16 +152,15 @@ body {
 }
 
 .top-actions .btn {
-  border-color: var(--header-text-dim);
-  color: var(--header-text-dim);
+  border-color: var(--line-hard);
+  color: var(--text);
   background: transparent;
   font-size: 0.72rem;
 }
 
 .top-actions .btn:hover {
-  border-color: rgba(255, 255, 255, 0.7);
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--text-dim);
+  background: var(--surface-2);
 }
 
 .top-actions .btn.warning {
@@ -187,7 +189,7 @@ h1 {
   font-weight: 900;
   line-height: 0.95;
   letter-spacing: -0.04em;
-  color: #fff;
+  color: var(--header-title);
   margin: 0.35rem 0 0.3rem;
 }
 
@@ -213,9 +215,9 @@ h1 {
 /* ── THEME TOGGLE ───────────────────────────────────── */
 
 .theme-toggle {
-  border: 1px solid var(--header-text-dim);
+  border: 1px solid var(--line-hard);
   background: transparent;
-  color: var(--header-text-dim);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 600;
@@ -228,9 +230,8 @@ h1 {
 }
 
 .theme-toggle:hover {
-  border-color: rgba(255, 255, 255, 0.7);
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--text-dim);
+  background: var(--surface-2);
 }
 
 /* ── NOTICE ──────────────────────────────────────────── */
@@ -368,6 +369,43 @@ h1 {
   margin-bottom: 1rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--line);
+}
+
+/* ── STATE FILTER ────────────────────────────────────── */
+
+.state-filter {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line-hard);
+}
+
+.state-filter-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: all 0.1s ease;
+  border-right: 1px solid var(--line-hard);
+}
+
+.state-filter-btn:last-child {
+  border-right: none;
+}
+
+.state-filter-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.state-filter-btn.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 /* ── FORM ELEMENTS ───────────────────────────────────── */
@@ -614,6 +652,23 @@ tbody tr:last-child td {
 .pill.codex::before {
   background: var(--ok);
   box-shadow: 0 0 6px var(--ok);
+}
+
+.pill.gemini {
+  border-color: rgba(66, 133, 244, 0.25);
+  color: #2b6cd4;
+  background: rgba(66, 133, 244, 0.06);
+}
+
+.pill.gemini::before {
+  background: #4285f4;
+  box-shadow: 0 0 6px #4285f4;
+}
+
+[data-theme="dark"] .pill.gemini {
+  color: #4285f4;
+  border-color: rgba(66, 133, 244, 0.3);
+  background: rgba(66, 133, 244, 0.08);
 }
 
 [data-theme="dark"] .pill.claude {

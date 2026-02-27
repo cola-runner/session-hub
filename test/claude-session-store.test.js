@@ -177,3 +177,117 @@ test("listSessions discovers sessions from multiple projects", async () => {
 
   await fs.rm(claudeHome, { recursive: true, force: true });
 });
+
+test("archive and unarchive move Claude sessions between directories", async () => {
+  const claudeHome = await createTempDir();
+  const projectDir = path.join(claudeHome, "projects", "-Users-test-myproject");
+
+  await writeClaudeSession(projectDir, "sess-arc", [
+    userLine("sess-arc", "Archive me", { gitBranch: "main" })
+  ]);
+
+  const store = new ClaudeSessionStore({ claudeHome });
+
+  // Verify initial state
+  let result = await store.listSessions();
+  assert.equal(result.counts.total, 1);
+  assert.equal(result.counts.active, 1);
+  assert.equal(result.counts.archived, 0);
+  assert.equal(result.items[0].state, "active");
+
+  // Archive the session
+  const archiveResult = await store.archiveItem(result.items[0]);
+  assert.ok(archiveResult.from);
+  assert.ok(archiveResult.to);
+  assert.ok(archiveResult.to.includes("archived_sessions"));
+
+  // Verify it moved to archived
+  result = await store.listSessions();
+  assert.equal(result.counts.total, 1);
+  assert.equal(result.counts.active, 0);
+  assert.equal(result.counts.archived, 1);
+  assert.equal(result.items[0].state, "archived");
+  assert.equal(result.items[0].projectName, "/Users/test/myproject");
+
+  // Unarchive it back
+  const unarchiveResult = await store.unarchiveItem(result.items[0]);
+  assert.ok(unarchiveResult.from);
+  assert.ok(unarchiveResult.to);
+  assert.ok(unarchiveResult.to.includes("projects"));
+
+  // Verify it's active again
+  result = await store.listSessions();
+  assert.equal(result.counts.total, 1);
+  assert.equal(result.counts.active, 1);
+  assert.equal(result.counts.archived, 0);
+  assert.equal(result.items[0].state, "active");
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+});
+
+test("archiveItem rejects already archived session", async () => {
+  const claudeHome = await createTempDir();
+  const archivedDir = path.join(claudeHome, "archived_sessions", "-Users-test-proj");
+
+  await writeClaudeSession(archivedDir, "sess-already", [
+    userLine("sess-already", "Already archived")
+  ]);
+
+  const store = new ClaudeSessionStore({ claudeHome });
+  const result = await store.listSessions();
+  assert.equal(result.items[0].state, "archived");
+
+  await assert.rejects(
+    () => store.archiveItem(result.items[0]),
+    { message: "only active sessions can be archived" }
+  );
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+});
+
+test("unarchiveItem rejects active session", async () => {
+  const claudeHome = await createTempDir();
+  const projectDir = path.join(claudeHome, "projects", "-Users-test-proj");
+
+  await writeClaudeSession(projectDir, "sess-active", [
+    userLine("sess-active", "Still active")
+  ]);
+
+  const store = new ClaudeSessionStore({ claudeHome });
+  const result = await store.listSessions();
+  assert.equal(result.items[0].state, "active");
+
+  await assert.rejects(
+    () => store.unarchiveItem(result.items[0]),
+    { message: "only archived sessions can be restored to active" }
+  );
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+});
+
+test("listSessions merges active and archived Claude sessions", async () => {
+  const claudeHome = await createTempDir();
+  const projectDir = path.join(claudeHome, "projects", "-Users-test-proj");
+  const archivedDir = path.join(claudeHome, "archived_sessions", "-Users-test-proj");
+
+  await writeClaudeSession(projectDir, "sess-active", [
+    userLine("sess-active", "Active session")
+  ]);
+  await writeClaudeSession(archivedDir, "sess-old", [
+    userLine("sess-old", "Old session")
+  ]);
+
+  const store = new ClaudeSessionStore({ claudeHome });
+  const result = await store.listSessions();
+
+  assert.equal(result.counts.total, 2);
+  assert.equal(result.counts.active, 1);
+  assert.equal(result.counts.archived, 1);
+
+  const active = result.items.find((i) => i.threadId === "sess-active");
+  const archived = result.items.find((i) => i.threadId === "sess-old");
+  assert.equal(active.state, "active");
+  assert.equal(archived.state, "archived");
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+});

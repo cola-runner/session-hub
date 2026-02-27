@@ -13,7 +13,7 @@ function printHelp() {
 session-hub
 
 Usage:
-  session-hub start [--codex-home PATH] [--claude-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
+  session-hub start [--codex-home PATH] [--claude-home PATH] [--gemini-home PATH] [--trash-root PATH] [--retention-days N] [--port N] [--no-open]
   session-hub cleanup [--codex-home PATH] [--trash-root PATH] [--retention-days N]
   session-hub install [--bin-dir PATH]
   session-hub uninstall [--bin-dir PATH]
@@ -21,6 +21,7 @@ Usage:
 Defaults:
   codex-home: ~/.codex
   claude-home: ~/.claude
+  gemini-home: ~/.gemini
   trash-root: ~/.codex-trash
   retention-days: 30
 `);
@@ -63,11 +64,14 @@ function resolvePaths(flags) {
   const claudeHome = path.resolve(
     String(flags["claude-home"] || process.env.CLAUDE_HOME || path.join(os.homedir(), ".claude"))
   );
+  const geminiHome = path.resolve(
+    String(flags["gemini-home"] || process.env.GEMINI_HOME || path.join(os.homedir(), ".gemini"))
+  );
   const trashRoot = path.resolve(
     String(flags["trash-root"] || path.join(os.homedir(), ".codex-trash"))
   );
 
-  return { codexHome, claudeHome, trashRoot };
+  return { codexHome, claudeHome, geminiHome, trashRoot };
 }
 
 function parseIntFlag(value, fallbackValue) {
@@ -157,7 +161,7 @@ async function uninstallBinary(flags) {
 }
 
 async function runStart(flags) {
-  const { codexHome, claudeHome, trashRoot } = resolvePaths(flags);
+  const { codexHome, claudeHome, geminiHome, trashRoot } = resolvePaths(flags);
   const retentionDays = parseIntFlag(flags["retention-days"], 30);
   const port = parseIntFlag(flags.port, 0);
   const shouldOpenBrowser = !Boolean(flags["no-open"]);
@@ -165,6 +169,7 @@ async function runStart(flags) {
   const running = await startServer({
     codexHome,
     claudeHome,
+    geminiHome,
     trashRoot,
     retentionDays,
     port
@@ -173,6 +178,7 @@ async function runStart(flags) {
   console.log(`Session Hub is running on ${running.url}`);
   console.log(`codex-home: ${codexHome}`);
   console.log(`claude-home: ${claudeHome}`);
+  console.log(`gemini-home: ${geminiHome}`);
   console.log(`trash-root: ${trashRoot} (retention: ${retentionDays} days)`);
   console.log(
     `expired cleanup at startup: ${running.cleanupReport.succeeded.length} deleted, ${running.cleanupReport.failed.length} failed`

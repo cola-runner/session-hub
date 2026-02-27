@@ -32,7 +32,7 @@
       </header>
 
       <section class="notice" role="note">
-        Unofficial community tool. Not affiliated with OpenAI or Anthropic.
+        Unofficial community tool. Not affiliated with OpenAI, Anthropic, or Google.
       </section>
 
       <section id="feedback" class="feedback" aria-live="polite"></section>
@@ -44,12 +44,20 @@
         <button id="tab-claude" class="tab" role="tab" aria-selected="false">
           Claude
         </button>
+        <button id="tab-gemini" class="tab" role="tab" aria-selected="false">
+          Gemini
+        </button>
         <button id="tab-trash" class="tab" role="tab" aria-selected="false">Trash</button>
       </nav>
 
       <section id="view-codex" class="card view">
         <div class="controls">
           <input id="codex-query" type="search" placeholder="Search Codex sessions" />
+          <div class="state-filter">
+            <button class="state-filter-btn active" data-filter="codex" data-state="all">All</button>
+            <button class="state-filter-btn" data-filter="codex" data-state="active">Active</button>
+            <button class="state-filter-btn" data-filter="codex" data-state="archived">Archived</button>
+          </div>
           <button id="codex-select-filtered" class="btn ghost">Select Filtered</button>
           <button id="codex-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
@@ -82,11 +90,18 @@
       <section id="view-claude" class="card view hidden">
         <div class="controls">
           <input id="claude-query" type="search" placeholder="Search Claude sessions" />
+          <div class="state-filter">
+            <button class="state-filter-btn active" data-filter="claude" data-state="all">All</button>
+            <button class="state-filter-btn" data-filter="claude" data-state="active">Active</button>
+            <button class="state-filter-btn" data-filter="claude" data-state="archived">Archived</button>
+          </div>
           <button id="claude-select-filtered" class="btn ghost">Select Filtered</button>
           <button id="claude-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
 
         <div class="batch-actions">
+          <button id="claude-action-archive" class="btn primary">Archive</button>
+          <button id="claude-action-unarchive" class="btn primary">Unarchive</button>
           <button id="claude-action-delete" class="btn danger">Move To Trash</button>
           <span id="claude-selection-meta" class="muted"></span>
         </div>
@@ -97,6 +112,7 @@
               <tr>
                 <th><input id="claude-check-all" type="checkbox" /></th>
                 <th>Title</th>
+                <th>State</th>
                 <th>Project</th>
                 <th>Branch</th>
                 <th>Updated</th>
@@ -104,6 +120,43 @@
               </tr>
             </thead>
             <tbody id="claude-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-gemini" class="card view hidden">
+        <div class="controls">
+          <input id="gemini-query" type="search" placeholder="Search Gemini sessions" />
+          <div class="state-filter">
+            <button class="state-filter-btn active" data-filter="gemini" data-state="all">All</button>
+            <button class="state-filter-btn" data-filter="gemini" data-state="active">Active</button>
+            <button class="state-filter-btn" data-filter="gemini" data-state="archived">Archived</button>
+          </div>
+          <button id="gemini-select-filtered" class="btn ghost">Select Filtered</button>
+          <button id="gemini-clear-selection" class="btn ghost">Clear Selection</button>
+        </div>
+
+        <div class="batch-actions">
+          <button id="gemini-action-archive" class="btn primary">Archive</button>
+          <button id="gemini-action-unarchive" class="btn primary">Unarchive</button>
+          <button id="gemini-action-delete" class="btn danger">Move To Trash</button>
+          <span id="gemini-selection-meta" class="muted"></span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><input id="gemini-check-all" type="checkbox" /></th>
+                <th>Title</th>
+                <th>State</th>
+                <th>Project Hash</th>
+                <th>Messages</th>
+                <th>Updated</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody id="gemini-body"></tbody>
           </table>
         </div>
       </section>
