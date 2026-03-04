@@ -59,6 +59,7 @@ session-hub start
 - browse active and archived Codex sessions
 - batch archive and unarchive Codex sessions
 - browse Claude Code sessions with project and branch info
+- export selected Claude sessions into a Codex continuation package
 - soft-delete sessions to trash (both Codex and Claude)
 - restore or permanently purge trash items
 - auto-clean expired trash on startup
@@ -82,14 +83,42 @@ curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/script
 session-hub start
 ```
 
-This starts a local server and opens the web UI.
+This starts a local server and opens the web UI in **transfer mode** (Claude tab focused).
 
 ### 3) Manage sessions
 
 Use the tabs in the UI:
 - **Codex**: archive, unarchive, or move sessions to trash
-- **Claude**: view sessions by project/branch, move to trash
+- **Claude**: view sessions by project/branch, archive/unarchive/delete, export selected sessions
 - **Trash**: restore or permanently delete (items from both providers)
+
+### 4) Transfer Claude sessions to Codex (recommended)
+
+In transfer mode, click **Transfer Claude Code Active To Codex**:
+1. Confirm ownership.
+2. Session Hub exports locally and creates **one new Codex session per Claude project**.
+3. Codex app opens so you can continue right away.
+
+If Codex app does not open (or you use CLI only), continue from terminal:
+- `codex resume --all`
+- or `codex resume <threadId>`
+
+If automatic handoff fails, use the fallback copy button.
+
+### 5) Manual export (optional)
+
+In the **Claude** tab:
+1. Select one or more Claude sessions.
+2. Click **Export**.
+3. Confirm the ownership checkbox.
+4. Copy the generated import prompt and paste it into a new Codex session.
+
+The export is local-only and generates:
+- `codex-import-prompt.md`
+- `context-pack.json`
+- `raw-events.jsonl`
+- `manifest.json`
+- `overflow-evidence.md`
 
 ## Requirements
 
@@ -108,6 +137,7 @@ Use the tabs in the UI:
 | Trash root | `~/.codex-trash` |
 | Local install dir | `~/.session-hub` |
 | Launcher path | `~/.local/bin/session-hub` |
+| Export root | `~/.session-hub/exports` |
 
 ## CLI Usage
 

@@ -103,7 +103,17 @@
           <button id="claude-action-archive" class="btn primary">Archive</button>
           <button id="claude-action-unarchive" class="btn primary">Unarchive</button>
           <button id="claude-action-delete" class="btn danger">Move To Trash</button>
+          <button id="claude-action-export" class="btn primary">Export</button>
+          <button id="claude-action-transfer-active" class="btn primary hidden">Transfer Claude Code Active To Codex</button>
           <span id="claude-selection-meta" class="muted"></span>
+        </div>
+
+        <div id="claude-export-result" class="export-result hidden" aria-live="polite">
+          <p id="claude-export-path" class="muted"></p>
+          <p id="claude-transfer-status" class="muted hidden"></p>
+          <div class="export-actions">
+            <button id="claude-copy-prompt" class="btn primary">Copy Import Prompt</button>
+          </div>
         </div>
 
         <div class="table-wrap">
@@ -205,6 +215,10 @@
       >
         <h2 id="confirm-title">Confirm</h2>
         <p id="confirm-message" class="modal-message"></p>
+        <label id="confirm-check-row" class="confirm-check hidden">
+          <input id="confirm-check-input" type="checkbox" />
+          <span id="confirm-check-label"></span>
+        </label>
         <div class="modal-actions">
           <button id="confirm-cancel" class="btn ghost">Cancel</button>
           <button id="confirm-accept" class="btn danger">Confirm</button>

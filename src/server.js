@@ -5,6 +5,7 @@ const { isPathInsideRoot } = require("./fs-utils");
 const { SessionStore } = require("./session-store");
 const { ClaudeSessionStore, isClaudeItemId } = require("./claude-session-store");
 const { GeminiSessionStore, isGeminiItemId } = require("./gemini-session-store");
+const { exportClaudeSessions } = require("./claude-export-service");
 const { TrashStore } = require("./trash-store");
 
 const WEB_ROOT = path.join(__dirname, "..", "web");
@@ -47,6 +48,26 @@ function parseStringArrayField(payload, fieldName) {
     return [];
   }
   return field.map(String);
+}
+
+function parseBooleanField(payload, fieldName, fallbackValue) {
+  const value = payload && payload[fieldName];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return fallbackValue;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+    if (normalized === "false") {
+      return false;
+    }
+  }
+  return fallbackValue;
 }
 
 function contentTypeFor(filePath) {
@@ -324,6 +345,58 @@ async function startServer({
           }
         );
         json(response, 200, report);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/claude/export") {
+        const payload = await readJsonBody(request);
+        const itemIds = parseStringArrayField(payload, "itemIds");
+        if (itemIds.length === 0) {
+          json(response, 400, { error: "itemIds must not be empty" });
+          return;
+        }
+
+        const nonClaudeIds = itemIds.filter((itemId) => !isClaudeItemId(itemId));
+        if (nonClaudeIds.length > 0) {
+          json(response, 400, {
+            error: `itemIds must be Claude session ids only`,
+            nonClaudeIds
+          });
+          return;
+        }
+
+        const ownershipConfirmed = parseBooleanField(payload, "ownershipConfirmed", false);
+        if (!ownershipConfirmed) {
+          json(response, 400, { error: "ownership confirmation is required" });
+          return;
+        }
+
+        const includeSubagents = parseBooleanField(payload, "includeSubagents", true);
+        const compression = payload && payload.compression !== undefined
+          ? String(payload.compression)
+          : "three-layer";
+        const budgetStrategy = payload && payload.budgetStrategy !== undefined
+          ? String(payload.budgetStrategy)
+          : "layered-trim";
+        const handoffToCodex = parseBooleanField(payload, "handoffToCodex", false);
+        const launchCodexApp = parseBooleanField(payload, "launchCodexApp", true);
+
+        try {
+          const exported = await exportClaudeSessions({
+            itemIds,
+            ownershipConfirmed,
+            includeSubagents,
+            compression,
+            budgetStrategy,
+            handoffToCodex,
+            launchCodexApp,
+            claudeHome,
+            claudeStore
+          });
+          json(response, 200, exported);
+        } catch (error) {
+          json(response, 400, { error: toErrorMessage(error) });
+        }
         return;
       }
 

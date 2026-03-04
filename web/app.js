@@ -31,11 +31,15 @@ function setStoredTheme(theme) {
 // Apply immediately to avoid flash
 applyTheme(getStoredTheme() || "light");
 
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const IS_TRANSFER_MODE = URL_PARAMS.get("mode") === "transfer";
+const INITIAL_VIEW = URL_PARAMS.get("view") || (IS_TRANSFER_MODE ? "claude" : "codex");
+
 const state = {
   config: null,
   sessions: [],
   trash: [],
-  currentView: "codex",
+  currentView: INITIAL_VIEW,
   queries: {
     codex: "",
     claude: "",
@@ -55,7 +59,11 @@ const state = {
   },
   confirmResolve: null,
   confirmKeyListenerBound: false,
-  lastFocusedElement: null
+  lastFocusedElement: null,
+  confirmCheckboxRequired: false,
+  claudeExportPrompt: "",
+  claudeExportResult: null,
+  transferSelectionBootstrapped: false
 };
 
 const dom = {
@@ -93,6 +101,12 @@ const dom = {
   claudeActionArchive: document.getElementById("claude-action-archive"),
   claudeActionUnarchive: document.getElementById("claude-action-unarchive"),
   claudeActionDelete: document.getElementById("claude-action-delete"),
+  claudeActionExport: document.getElementById("claude-action-export"),
+  claudeActionTransferActive: document.getElementById("claude-action-transfer-active"),
+  claudeExportResult: document.getElementById("claude-export-result"),
+  claudeExportPath: document.getElementById("claude-export-path"),
+  claudeTransferStatus: document.getElementById("claude-transfer-status"),
+  claudeCopyPrompt: document.getElementById("claude-copy-prompt"),
 
   geminiQuery: document.getElementById("gemini-query"),
   geminiSelectFiltered: document.getElementById("gemini-select-filtered"),
@@ -117,9 +131,39 @@ const dom = {
   confirmBackdrop: document.getElementById("confirm-backdrop"),
   confirmTitle: document.getElementById("confirm-title"),
   confirmMessage: document.getElementById("confirm-message"),
+  confirmCheckRow: document.getElementById("confirm-check-row"),
+  confirmCheckInput: document.getElementById("confirm-check-input"),
+  confirmCheckLabel: document.getElementById("confirm-check-label"),
   confirmCancel: document.getElementById("confirm-cancel"),
   confirmAccept: document.getElementById("confirm-accept")
 };
+
+function setActiveStateFilter(filterGroup, filterState) {
+  const selector = `.state-filter-btn[data-filter="${filterGroup}"]`;
+  document.querySelectorAll(selector).forEach((button) => {
+    button.classList.toggle("active", button.getAttribute("data-state") === filterState);
+  });
+}
+
+function configureTransferModeUI() {
+  if (!IS_TRANSFER_MODE) {
+    return;
+  }
+
+  dom.tabCodex.classList.add("hidden");
+  dom.tabGemini.classList.add("hidden");
+  dom.tabTrash.classList.add("hidden");
+  dom.cleanupExpired.classList.add("hidden");
+
+  dom.claudeActionArchive.classList.add("hidden");
+  dom.claudeActionUnarchive.classList.add("hidden");
+  dom.claudeActionDelete.classList.add("hidden");
+  dom.claudeActionExport.classList.add("hidden");
+  dom.claudeActionTransferActive.classList.remove("hidden");
+
+  state.stateFilter.claude = "active";
+  setActiveStateFilter("claude", "active");
+}
 
 /* ── helpers ──────────────────────────────────────────── */
 
@@ -222,6 +266,16 @@ function toError(error) {
   return String(error);
 }
 
+async function copyTextToClipboard(text) {
+  if (!text) {
+    throw new Error("nothing to copy");
+  }
+  if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+    throw new Error("clipboard API is unavailable in this browser");
+  }
+  await navigator.clipboard.writeText(text);
+}
+
 /* ── confirm modal ────────────────────────────────────── */
 
 function closeConfirmModal(accepted) {
@@ -243,6 +297,10 @@ function closeConfirmModal(accepted) {
     state.lastFocusedElement.focus();
   }
   state.lastFocusedElement = null;
+  state.confirmCheckboxRequired = false;
+  dom.confirmCheckInput.checked = false;
+  dom.confirmCheckRow.classList.add("hidden");
+  dom.confirmAccept.disabled = false;
 
   resolver(Boolean(accepted));
 }
@@ -252,7 +310,8 @@ function requestConfirmation({
   message,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
-  danger = true
+  danger = true,
+  requireCheckboxLabel = ""
 }) {
   if (state.confirmResolve) {
     closeConfirmModal(false);
@@ -264,6 +323,18 @@ function requestConfirmation({
   dom.confirmCancel.textContent = cancelLabel;
   dom.confirmAccept.classList.toggle("danger", danger);
   dom.confirmAccept.classList.toggle("primary", !danger);
+  const shouldRequireCheckbox = Boolean(requireCheckboxLabel);
+  state.confirmCheckboxRequired = shouldRequireCheckbox;
+  if (shouldRequireCheckbox) {
+    dom.confirmCheckLabel.textContent = requireCheckboxLabel;
+    dom.confirmCheckInput.checked = false;
+    dom.confirmCheckRow.classList.remove("hidden");
+    dom.confirmAccept.disabled = true;
+  } else {
+    dom.confirmCheckInput.checked = false;
+    dom.confirmCheckRow.classList.add("hidden");
+    dom.confirmAccept.disabled = false;
+  }
 
   dom.confirmModal.classList.remove("hidden");
   dom.confirmModal.setAttribute("aria-hidden", "false");
@@ -286,6 +357,10 @@ function codexSessions() {
 
 function claudeSessions() {
   return state.sessions.filter((s) => s.provider === "claude");
+}
+
+function activeClaudeSessions() {
+  return claudeSessions().filter((session) => session.state === "active");
 }
 
 function filteredCodex() {
@@ -606,6 +681,10 @@ function renderSelectionMeta() {
   dom.claudeActionArchive.disabled = !hasClaudeActiveSelected;
   dom.claudeActionUnarchive.disabled = !hasClaudeArchivedSelected;
   dom.claudeActionDelete.disabled = state.selected.claude.size === 0;
+  dom.claudeActionExport.disabled = IS_TRANSFER_MODE
+    ? filteredClaude().length === 0
+    : state.selected.claude.size === 0;
+  dom.claudeActionTransferActive.disabled = activeClaudeSessions().length === 0;
 
   const geminiSelectedItems = geminiSessions().filter((s) => state.selected.gemini.has(s.itemId));
   const hasGeminiActiveSelected = geminiSelectedItems.some((s) => s.state === "active");
@@ -686,17 +765,97 @@ async function loadTrash() {
   state.trash = response.items || [];
 }
 
+function renderClaudeExportResult() {
+  if (!state.claudeExportResult) {
+    dom.claudeExportResult.classList.add("hidden");
+    dom.claudeExportPath.textContent = "";
+    dom.claudeTransferStatus.textContent = "";
+    dom.claudeTransferStatus.classList.add("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.disabled = true;
+    return;
+  }
+
+  const result = state.claudeExportResult;
+  if (result.batch) {
+    const batch = result.batch;
+    dom.claudeExportPath.textContent =
+      `Transferred ${batch.sessionCount} session(s) from ${batch.projectCount} project(s).`;
+
+    const cliFallback = batch.handoffSuccessCount > 0
+      ? " App not opened? run `codex resume --all` in terminal."
+      : "";
+
+    if (batch.errors.length > 0) {
+      const preview = batch.errors.slice(0, 2).join(" | ");
+      dom.claudeTransferStatus.textContent =
+        `Created ${batch.handoffSuccessCount} Codex session(s). Issues: ${preview}${batch.errors.length > 2 ? " ..." : ""}${cliFallback}`;
+    } else if (batch.threadRefs.length > 0) {
+      const preview = batch.threadRefs.slice(0, 2).join(" | ");
+      dom.claudeTransferStatus.textContent =
+        `Created ${batch.handoffSuccessCount} Codex session(s). Threads: ${preview}${batch.threadRefs.length > 2 ? " ..." : ""}${cliFallback}`;
+    } else {
+      dom.claudeTransferStatus.textContent =
+        `Created ${batch.handoffSuccessCount} Codex session(s).${cliFallback}`;
+    }
+    dom.claudeTransferStatus.classList.remove("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt (Single Export Only)";
+    dom.claudeCopyPrompt.disabled = true;
+    dom.claudeExportResult.classList.remove("hidden");
+    return;
+  }
+
+  dom.claudeExportPath.textContent =
+    `Exported ${result.stats?.sessionCount || 0} session(s), ${result.stats?.eventCount || 0} events to ${result.exportDir}`;
+  if (result.codexHandoff && result.codexHandoff.ok) {
+    const threadSuffix = result.codexHandoff.threadId ? ` (thread ${result.codexHandoff.threadId})` : "";
+    const fallbackHint = result.codexHandoff.launchedCodexApp === false
+      ? ` App not opened? run \`codex resume ${result.codexHandoff.threadId || "--all"}\`.`
+      : "";
+    dom.claudeTransferStatus.textContent = `Transferred to Codex${threadSuffix}. Continue in Codex now.${fallbackHint}`;
+    dom.claudeTransferStatus.classList.remove("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt (Fallback)";
+  } else if (result.codexHandoff && result.codexHandoff.ok === false) {
+    dom.claudeTransferStatus.textContent =
+      `Auto transfer to Codex failed: ${result.codexHandoff.error}. Use the copy button as fallback.`;
+    dom.claudeTransferStatus.classList.remove("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+  } else {
+    dom.claudeTransferStatus.textContent = "";
+    dom.claudeTransferStatus.classList.add("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+  }
+  dom.claudeExportResult.classList.remove("hidden");
+  dom.claudeCopyPrompt.disabled = !state.claudeExportPrompt;
+}
+
 function renderAll() {
   renderTabCounts();
   renderCodex();
   renderClaude();
+  renderClaudeExportResult();
   renderGemini();
   renderTrash();
+}
+
+function bootstrapTransferSelectionIfNeeded() {
+  if (!IS_TRANSFER_MODE || state.transferSelectionBootstrapped) {
+    return;
+  }
+
+  state.stateFilter.claude = "active";
+  setActiveStateFilter("claude", "active");
+  const activeClaudeRows = filteredClaude();
+  if (activeClaudeRows.length > 0 && state.selected.claude.size === 0) {
+    applySelection(state.selected.claude, activeClaudeRows, "itemId", true);
+  }
+  state.transferSelectionBootstrapped = true;
 }
 
 async function refreshAll() {
   await Promise.all([loadConfig(), loadSessions(), loadTrash()]);
   sanitizeSelections();
+  bootstrapTransferSelectionIfNeeded();
   renderAll();
 }
 
@@ -801,6 +960,193 @@ async function runClaudeAction(actionName) {
   showFeedback(`${actionName}: ${summarizeReport(report)}`, report.failedCount ? "error" : "ok");
   selectedSet.clear();
   await Promise.all([loadSessions(), loadTrash()]);
+  sanitizeSelections();
+  renderAll();
+}
+
+async function requestClaudeExport(itemIds, options = {}) {
+  return requestJson("/api/claude/export", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      itemIds,
+      ownershipConfirmed: true,
+      includeSubagents: true,
+      compression: "three-layer",
+      budgetStrategy: "layered-trim",
+      handoffToCodex: Boolean(options.handoffToCodex),
+      launchCodexApp: options.launchCodexApp !== false
+    })
+  });
+}
+
+async function runClaudeExportByItemIds(itemIds, confirmationTitle, confirmationMessage, options = {}) {
+  if (itemIds.length === 0) {
+    showFeedback("No Claude sessions selected.", "error");
+    return;
+  }
+
+  const accepted = await requestConfirmation({
+    title: confirmationTitle,
+    message: confirmationMessage,
+    confirmLabel: options.confirmLabel || "Export",
+    cancelLabel: "Cancel",
+    danger: false,
+    requireCheckboxLabel: "I confirm these sessions belong to me and were generated on this device."
+  });
+  if (!accepted) {
+    return;
+  }
+
+  const exported = await requestClaudeExport(itemIds, options);
+
+  state.claudeExportResult = exported;
+  state.claudeExportPrompt = exported.promptText || "";
+  renderClaudeExportResult();
+  if (exported.codexHandoff && exported.codexHandoff.ok) {
+    const threadSuffix = exported.codexHandoff.threadId ? ` (thread ${exported.codexHandoff.threadId})` : "";
+    showFeedback(
+      `transfer: created Codex session${threadSuffix}. sessions ${exported.stats?.sessionCount || 0}, events ${exported.stats?.eventCount || 0}`,
+      "ok"
+    );
+  } else if (exported.codexHandoff && exported.codexHandoff.ok === false) {
+    showFeedback(
+      `transfer: exported locally, but auto handoff failed (${exported.codexHandoff.error})`,
+      "error"
+    );
+  } else {
+    showFeedback(
+      `export: sessions ${exported.stats?.sessionCount || 0}, events ${exported.stats?.eventCount || 0}, evidence ${exported.stats?.selectedEvidenceCount || 0}`,
+      "ok"
+    );
+  }
+  await loadSessions();
+  sanitizeSelections();
+  renderAll();
+}
+
+async function runClaudeExport() {
+  const itemIds = Array.from(state.selected.claude);
+  const confirmationTitle = "Export selected Claude sessions?";
+  const confirmationMessage =
+    `Create a local Codex continuation package from ${itemIds.length} selected Claude session(s)?\n\n` +
+    "This writes local files only and does not upload any session content.";
+  await runClaudeExportByItemIds(itemIds, confirmationTitle, confirmationMessage);
+}
+
+async function runClaudeTransferActive() {
+  const itemIds = activeClaudeSessions().map((session) => session.itemId);
+  if (itemIds.length === 0) {
+    showFeedback("No active Claude sessions found.", "error");
+    return;
+  }
+  const confirmationTitle = "Transfer Claude Code active sessions to Codex?";
+  const confirmationMessage =
+    `Transfer ${itemIds.length} active Claude session(s) now?\n\n` +
+    "Session Hub will create 1 new Codex session per Claude project (not one giant merged session).";
+
+  const accepted = await requestConfirmation({
+    title: confirmationTitle,
+    message: confirmationMessage,
+    confirmLabel: "Transfer",
+    cancelLabel: "Cancel",
+    danger: false,
+    requireCheckboxLabel: "I confirm these sessions belong to me and were generated on this device."
+  });
+  if (!accepted) {
+    return;
+  }
+
+  const grouped = new Map();
+  for (const session of activeClaudeSessions()) {
+    const projectName = session.projectName || "(unknown-project)";
+    if (!grouped.has(projectName)) {
+      grouped.set(projectName, []);
+    }
+    grouped.get(projectName).push(session.itemId);
+  }
+
+  const groups = Array.from(grouped.entries()).map(([projectName, groupItemIds]) => ({
+    projectName,
+    itemIds: groupItemIds
+  }));
+
+  const batch = {
+    projectCount: groups.length,
+    sessionCount: itemIds.length,
+    exportedProjects: 0,
+    failedProjects: 0,
+    handoffSuccessCount: 0,
+    handoffFailureCount: 0,
+    launchedCodexAppCount: 0,
+    eventCount: 0,
+    threadRefs: [],
+    errors: []
+  };
+
+  for (let index = 0; index < groups.length; index += 1) {
+    const group = groups[index];
+    try {
+      const exported = await requestClaudeExport(group.itemIds, {
+        handoffToCodex: true,
+        launchCodexApp: index === 0
+      });
+
+      batch.exportedProjects += 1;
+      batch.eventCount += exported.stats?.eventCount || 0;
+
+      if (exported.codexHandoff && exported.codexHandoff.ok) {
+        batch.handoffSuccessCount += 1;
+        if (exported.codexHandoff.launchedCodexApp) {
+          batch.launchedCodexAppCount += 1;
+        }
+        if (exported.codexHandoff.threadId) {
+          batch.threadRefs.push(`${group.projectName}: ${exported.codexHandoff.threadId}`);
+        }
+      } else if (exported.codexHandoff && exported.codexHandoff.ok === false) {
+        batch.handoffFailureCount += 1;
+        batch.errors.push(`${group.projectName}: ${exported.codexHandoff.error}`);
+      }
+    } catch (error) {
+      batch.failedProjects += 1;
+      batch.errors.push(`${group.projectName}: ${toError(error)}`);
+    }
+  }
+
+  state.claudeExportResult = {
+    exportDir: "~/.session-hub/exports/<export-id>",
+    stats: {
+      sessionCount: batch.sessionCount,
+      eventCount: batch.eventCount
+    },
+    batch,
+    codexHandoff: {
+      ok: batch.handoffFailureCount === 0 && batch.failedProjects === 0,
+      threadId: batch.handoffSuccessCount > 0
+        ? `${batch.handoffSuccessCount} threads`
+        : null,
+      error: batch.errors[0] || null
+    }
+  };
+  state.claudeExportPrompt = "";
+  renderClaudeExportResult();
+
+  if (batch.failedProjects === 0 && batch.handoffFailureCount === 0) {
+    const cliHint = batch.launchedCodexAppCount === 0
+      ? " App not opened? run `codex resume --all`."
+      : "";
+    showFeedback(
+      `transfer: ${batch.sessionCount} session(s) across ${batch.projectCount} project(s), created ${batch.handoffSuccessCount} Codex session(s).${cliHint}`,
+      "ok"
+    );
+  } else {
+    showFeedback(
+      `transfer: partial success (${batch.handoffSuccessCount}/${batch.projectCount} projects created). See details below.`,
+      "error"
+    );
+  }
+
+  await loadSessions();
   sanitizeSelections();
   renderAll();
 }
@@ -910,6 +1256,13 @@ function wireEvents() {
   dom.confirmBackdrop.addEventListener("click", () => closeConfirmModal(false));
   dom.confirmCancel.addEventListener("click", () => closeConfirmModal(false));
   dom.confirmAccept.addEventListener("click", () => closeConfirmModal(true));
+  dom.confirmCheckInput.addEventListener("change", () => {
+    if (!state.confirmCheckboxRequired) {
+      dom.confirmAccept.disabled = false;
+      return;
+    }
+    dom.confirmAccept.disabled = !dom.confirmCheckInput.checked;
+  });
 
   // Theme toggle
   document.getElementById("theme-toggle").addEventListener("click", () => {
@@ -950,8 +1303,7 @@ function wireEvents() {
       const filterGroup = btn.getAttribute("data-filter");
       const filterState = btn.getAttribute("data-state");
       state.stateFilter[filterGroup] = filterState;
-      btn.parentElement.querySelectorAll(".state-filter-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
+      setActiveStateFilter(filterGroup, filterState);
       if (filterGroup === "codex") renderCodex();
       else if (filterGroup === "claude") renderClaude();
       else if (filterGroup === "gemini") renderGemini();
@@ -1011,6 +1363,17 @@ function wireEvents() {
   dom.claudeActionDelete.addEventListener("click", () => {
     runClaudeAction("delete").catch((error) => showFeedback(toError(error), "error"));
   });
+  dom.claudeActionExport.addEventListener("click", () => {
+    runClaudeExport().catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.claudeActionTransferActive.addEventListener("click", () => {
+    runClaudeTransferActive().catch((error) => showFeedback(toError(error), "error"));
+  });
+  dom.claudeCopyPrompt.addEventListener("click", () => {
+    copyTextToClipboard(state.claudeExportPrompt)
+      .then(() => showFeedback("Copied Codex import prompt.", "ok"))
+      .catch((error) => showFeedback(toError(error), "error"));
+  });
 
   // Gemini view
   dom.geminiQuery.addEventListener("input", (event) => {
@@ -1064,6 +1427,7 @@ function wireEvents() {
   });
 }
 
+configureTransferModeUI();
 wireEvents();
-setCurrentView("codex");
+setCurrentView(INITIAL_VIEW);
 refreshAll().catch((error) => showFeedback(toError(error), "error"));

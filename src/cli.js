@@ -111,6 +111,17 @@ function openBrowser(url) {
   }
 }
 
+function withTransferMode(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("mode", "transfer");
+    parsed.searchParams.set("view", "claude");
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 async function installBinary(flags) {
   const binDir = path.resolve(
     String(flags["bin-dir"] || path.join(os.homedir(), ".local", "bin"))
@@ -185,7 +196,7 @@ async function runStart(flags) {
   );
 
   if (shouldOpenBrowser) {
-    openBrowser(running.url);
+    openBrowser(withTransferMode(running.url));
   }
 
   const shutdown = () => {
