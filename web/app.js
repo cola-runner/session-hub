@@ -68,6 +68,12 @@ const state = {
 
 const dom = {
   configInfo: document.getElementById("config-info"),
+  heroMode: document.getElementById("hero-mode"),
+  heroTransferStatus: document.getElementById("hero-transfer-status"),
+  statCodexTotal: document.getElementById("stat-codex-total"),
+  statClaudeActive: document.getElementById("stat-claude-active"),
+  statTransferProjects: document.getElementById("stat-transfer-projects"),
+  statTrashTotal: document.getElementById("stat-trash-total"),
   feedback: document.getElementById("feedback"),
   refreshAll: document.getElementById("refresh-all"),
   cleanupExpired: document.getElementById("cleanup-expired"),
@@ -263,6 +269,22 @@ function toError(error) {
     return error.message;
   }
   return String(error);
+}
+
+function isInlineHandoffSuccess(handoff) {
+  return Boolean(handoff && handoff.ok === true && handoff.mode === "inline-pack");
+}
+
+function handoffCompressionNote(handoff) {
+  return handoff && handoff.trimmed
+    ? " Context was compressed for inline handoff; full export files remain on disk."
+    : "";
+}
+
+function handoffRestartNote(handoff) {
+  return handoff && handoff.restartedCodexApp
+    ? " Codex App was restarted to refresh the desktop thread list."
+    : "";
 }
 
 async function copyTextToClipboard(text) {
@@ -840,6 +862,7 @@ function renderSelectionMeta() {
 
   dom.actionRestore.disabled = state.selected.trash.size === 0;
   dom.actionPurge.disabled = state.selected.trash.size === 0;
+  renderOverviewStats();
 }
 
 function renderTabCounts() {
@@ -880,6 +903,51 @@ function renderTabCounts() {
   });
 }
 
+function renderOverviewStats() {
+  const codexAll = codexSessions();
+  const claudeAll = claudeSessions();
+  const trashCount = state.trash.length;
+  const claudeActive = claudeAll.filter((session) => session.state === "active").length;
+  const selectedClaudeProjects = selectedActiveClaudeProjectKeys().size;
+  const totalActiveClaudeProjects = new Set(activeClaudeSessions().map((session) => claudeProjectKey(session))).size;
+
+  if (dom.statCodexTotal) {
+    dom.statCodexTotal.textContent = String(codexAll.length);
+  }
+  if (dom.statClaudeActive) {
+    dom.statClaudeActive.textContent = String(claudeActive);
+  }
+  if (dom.statTransferProjects) {
+    const transferValue = IS_TRANSFER_MODE && selectedClaudeProjects > 0
+      ? selectedClaudeProjects
+      : totalActiveClaudeProjects;
+    dom.statTransferProjects.textContent = String(transferValue);
+  }
+  if (dom.statTrashTotal) {
+    dom.statTrashTotal.textContent = String(trashCount);
+  }
+  if (dom.heroMode) {
+    dom.heroMode.textContent = IS_TRANSFER_MODE ? "Transfer Mode" : "Session Ops";
+  }
+  if (dom.heroTransferStatus) {
+    if (state.claudeExportResult && state.claudeExportResult.batch) {
+      const batch = state.claudeExportResult.batch;
+      dom.heroTransferStatus.textContent = batch.handoffFailureCount > 0 || batch.failedProjects > 0
+        ? `Partial ${batch.handoffSuccessCount}/${batch.projectCount}`
+        : `${batch.handoffSuccessCount} thread${batch.handoffSuccessCount === 1 ? "" : "s"} primed`;
+    } else if (isInlineHandoffSuccess(state.claudeExportResult && state.claudeExportResult.codexHandoff)) {
+      dom.heroTransferStatus.textContent = state.claudeExportResult.codexHandoff.trimmed
+        ? "Inline handoff (compressed)"
+        : "Inline handoff ready";
+    } else if (IS_TRANSFER_MODE && selectedClaudeProjects > 0) {
+      dom.heroTransferStatus.textContent =
+        `${selectedClaudeProjects} project${selectedClaudeProjects === 1 ? "" : "s"} queued`;
+    } else {
+      dom.heroTransferStatus.textContent = "Idle";
+    }
+  }
+}
+
 function sanitizeSelections() {
   const codexIds = new Set(codexSessions().map((s) => s.itemId));
   const claudeIds = new Set(claudeSessions().map((s) => s.itemId));
@@ -910,12 +978,12 @@ async function loadTrash() {
 }
 
 function renderClaudeExportResult() {
-  if (IS_TRANSFER_MODE) {
+  if (IS_TRANSFER_MODE && !(state.claudeExportResult && state.claudeExportResult.batch)) {
     dom.claudeExportResult.classList.add("hidden");
     dom.claudeExportPath.textContent = "";
     dom.claudeTransferStatus.textContent = "";
     dom.claudeTransferStatus.classList.add("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt";
     dom.claudeCopyPrompt.disabled = true;
     return;
   }
@@ -925,7 +993,7 @@ function renderClaudeExportResult() {
     dom.claudeExportPath.textContent = "";
     dom.claudeTransferStatus.textContent = "";
     dom.claudeTransferStatus.classList.add("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt";
     dom.claudeCopyPrompt.disabled = true;
     return;
   }
@@ -939,21 +1007,27 @@ function renderClaudeExportResult() {
     const cliFallback = batch.handoffSuccessCount > 0
       ? " App not opened? run `codex resume --all` in terminal."
       : "";
+    const compressionNote = batch.trimmedCount > 0
+      ? ` ${batch.trimmedCount} thread(s) used compressed inline context.`
+      : "";
+    const restartNote = batch.restartedCodexAppCount > 0
+      ? " Codex App was restarted after the final handoff to refresh the desktop thread list."
+      : "";
 
     if (batch.errors.length > 0) {
       const preview = batch.errors.slice(0, 2).join(" | ");
       dom.claudeTransferStatus.textContent =
-        `Created ${batch.handoffSuccessCount} Codex session(s). Issues: ${preview}${batch.errors.length > 2 ? " ..." : ""}${cliFallback}`;
+        `Injected context into ${batch.handoffSuccessCount} Codex thread(s). Issues: ${preview}${batch.errors.length > 2 ? " ..." : ""}${compressionNote}${restartNote}${cliFallback}`;
     } else if (batch.threadRefs.length > 0) {
       const preview = batch.threadRefs.slice(0, 2).join(" | ");
       dom.claudeTransferStatus.textContent =
-        `Created ${batch.handoffSuccessCount} Codex session(s). Threads: ${preview}${batch.threadRefs.length > 2 ? " ..." : ""}${cliFallback}`;
+        `Injected context into ${batch.handoffSuccessCount} Codex thread(s). Threads: ${preview}${batch.threadRefs.length > 2 ? " ..." : ""}${compressionNote}${restartNote}${cliFallback}`;
     } else {
       dom.claudeTransferStatus.textContent =
-        `Created ${batch.handoffSuccessCount} Codex session(s).${cliFallback}`;
+        `Injected context into ${batch.handoffSuccessCount} Codex thread(s).${compressionNote}${restartNote}${cliFallback}`;
     }
     dom.claudeTransferStatus.classList.remove("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt (Single Export Only)";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt (Single Export Only)";
     dom.claudeCopyPrompt.disabled = true;
     dom.claudeExportResult.classList.remove("hidden");
     return;
@@ -961,29 +1035,36 @@ function renderClaudeExportResult() {
 
   dom.claudeExportPath.textContent =
     `Exported ${result.stats?.sessionCount || 0} session(s), ${result.stats?.eventCount || 0} events to ${result.exportDir}`;
-  if (result.codexHandoff && result.codexHandoff.ok) {
+  if (isInlineHandoffSuccess(result.codexHandoff)) {
     const threadSuffix = result.codexHandoff.threadId ? ` (thread ${result.codexHandoff.threadId})` : "";
     const fallbackHint = result.codexHandoff.launchedCodexApp === false
       ? ` App not opened? run \`codex resume ${result.codexHandoff.threadId || "--all"}\`.`
       : "";
-    dom.claudeTransferStatus.textContent = `Transferred to Codex${threadSuffix}. Continue in Codex now.${fallbackHint}`;
+    dom.claudeTransferStatus.textContent =
+      `Inline context injected into a new Codex thread${threadSuffix}. The first Codex reply should only confirm the package was loaded.${handoffCompressionNote(result.codexHandoff)}${handoffRestartNote(result.codexHandoff)}${fallbackHint}`;
     dom.claudeTransferStatus.classList.remove("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt (Fallback)";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt (Backup)";
   } else if (result.codexHandoff && result.codexHandoff.ok === false) {
     dom.claudeTransferStatus.textContent =
-      `Auto transfer to Codex failed: ${result.codexHandoff.error}. Use the copy button as fallback.`;
+      `Inline handoff to Codex failed: ${result.codexHandoff.error}. Use the full import prompt as fallback.`;
     dom.claudeTransferStatus.classList.remove("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt";
+  } else if (result.codexHandoff) {
+    dom.claudeTransferStatus.textContent =
+      "Codex thread creation returned without inline context confirmation. Use the full import prompt as fallback.";
+    dom.claudeTransferStatus.classList.remove("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt";
   } else {
     dom.claudeTransferStatus.textContent = "";
     dom.claudeTransferStatus.classList.add("hidden");
-    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.textContent = "Copy Full Import Prompt";
   }
   dom.claudeExportResult.classList.remove("hidden");
   dom.claudeCopyPrompt.disabled = !state.claudeExportPrompt;
 }
 
 function renderAll() {
+  renderOverviewStats();
   renderTabCounts();
   renderCodex();
   renderClaude();
@@ -1125,7 +1206,8 @@ async function requestClaudeExport(itemIds, options = {}) {
       compression: "three-layer",
       budgetStrategy: "layered-trim",
       handoffToCodex: Boolean(options.handoffToCodex),
-      launchCodexApp: options.launchCodexApp !== false
+      launchCodexApp: options.launchCodexApp !== false,
+      restartCodexApp: options.restartCodexApp === true
     })
   });
 }
@@ -1153,15 +1235,24 @@ async function runClaudeExportByItemIds(itemIds, confirmationTitle, confirmation
   state.claudeExportResult = exported;
   state.claudeExportPrompt = exported.promptText || "";
   renderClaudeExportResult();
-  if (exported.codexHandoff && exported.codexHandoff.ok) {
+  if (isInlineHandoffSuccess(exported.codexHandoff)) {
     const threadSuffix = exported.codexHandoff.threadId ? ` (thread ${exported.codexHandoff.threadId})` : "";
+    const compressionSuffix = exported.codexHandoff.trimmed ? " compressed for size" : "";
+    const restartSuffix = exported.codexHandoff.restartedCodexApp
+      ? "; Codex App restarted to refresh the desktop thread list"
+      : "";
     showFeedback(
-      `transfer: created Codex session${threadSuffix}. sessions ${exported.stats?.sessionCount || 0}, events ${exported.stats?.eventCount || 0}`,
+      `transfer: inline context injected into Codex thread${threadSuffix}${compressionSuffix}${restartSuffix}. sessions ${exported.stats?.sessionCount || 0}, events ${exported.stats?.eventCount || 0}`,
       "ok"
     );
   } else if (exported.codexHandoff && exported.codexHandoff.ok === false) {
     showFeedback(
-      `transfer: exported locally, but auto handoff failed (${exported.codexHandoff.error})`,
+      `transfer: exported locally, but inline handoff failed (${exported.codexHandoff.error})`,
+      "error"
+    );
+  } else if (exported.codexHandoff) {
+    showFeedback(
+      "transfer: Codex thread was created without inline context confirmation; use the backup prompt.",
       "error"
     );
   } else {
@@ -1236,6 +1327,8 @@ async function runClaudeTransferActive() {
     handoffSuccessCount: 0,
     handoffFailureCount: 0,
     launchedCodexAppCount: 0,
+    restartedCodexAppCount: 0,
+    trimmedCount: 0,
     eventCount: 0,
     threadRefs: [],
     errors: []
@@ -1246,16 +1339,23 @@ async function runClaudeTransferActive() {
     try {
       const exported = await requestClaudeExport(group.itemIds, {
         handoffToCodex: true,
-        launchCodexApp: index === 0
+        launchCodexApp: index === groups.length - 1,
+        restartCodexApp: index === groups.length - 1
       });
 
       batch.exportedProjects += 1;
       batch.eventCount += exported.stats?.eventCount || 0;
 
-      if (exported.codexHandoff && exported.codexHandoff.ok) {
+      if (isInlineHandoffSuccess(exported.codexHandoff)) {
         batch.handoffSuccessCount += 1;
+        if (exported.codexHandoff.trimmed) {
+          batch.trimmedCount += 1;
+        }
         if (exported.codexHandoff.launchedCodexApp) {
           batch.launchedCodexAppCount += 1;
+        }
+        if (exported.codexHandoff.restartedCodexApp) {
+          batch.restartedCodexAppCount += 1;
         }
         if (exported.codexHandoff.threadId) {
           batch.threadRefs.push(`${group.projectName}: ${exported.codexHandoff.threadId}`);
@@ -1263,6 +1363,9 @@ async function runClaudeTransferActive() {
       } else if (exported.codexHandoff && exported.codexHandoff.ok === false) {
         batch.handoffFailureCount += 1;
         batch.errors.push(`${group.projectName}: ${exported.codexHandoff.error}`);
+      } else {
+        batch.handoffFailureCount += 1;
+        batch.errors.push(`${group.projectName}: inline handoff was not confirmed`);
       }
     } catch (error) {
       batch.failedProjects += 1;
@@ -1270,17 +1373,27 @@ async function runClaudeTransferActive() {
     }
   }
 
+  state.claudeExportResult = { batch };
+  state.claudeExportPrompt = "";
+  renderClaudeExportResult();
+
   if (batch.failedProjects === 0 && batch.handoffFailureCount === 0) {
     const cliHint = batch.launchedCodexAppCount === 0
       ? " App not opened? run `codex resume --all`."
       : "";
+    const compressionHint = batch.trimmedCount > 0
+      ? ` ${batch.trimmedCount} thread(s) were compressed for inline handoff.`
+      : "";
+    const restartHint = batch.restartedCodexAppCount > 0
+      ? " Codex App was restarted after the final handoff to refresh the desktop thread list."
+      : "";
     showFeedback(
-      `transfer: ${batch.sessionCount} session(s) across ${batch.projectCount} project(s), created ${batch.handoffSuccessCount} Codex session(s).${cliHint}`,
+      `transfer: ${batch.sessionCount} session(s) across ${batch.projectCount} project(s), injected ${batch.handoffSuccessCount} Codex thread(s).${compressionHint}${restartHint}${cliHint}`,
       "ok"
     );
   } else {
     showFeedback(
-      `transfer: partial success (${batch.handoffSuccessCount}/${batch.projectCount} projects created). See details below.`,
+      `transfer: partial success (${batch.handoffSuccessCount}/${batch.projectCount} projects primed). See details below.`,
       "error"
     );
   }

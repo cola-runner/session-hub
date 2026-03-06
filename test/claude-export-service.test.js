@@ -145,6 +145,42 @@ test("exportClaudeSessions supports single-session export", async () => {
   await fs.rm(exportRoot, { recursive: true, force: true });
 });
 
+test("exportClaudeSessions ignores interrupted placeholders when deriving the goal", async () => {
+  const claudeHome = await createTempDir("session-hub-export-summary-");
+  const exportRoot = await createTempDir("session-hub-export-summary-out-");
+  const project = path.join(claudeHome, "projects", "-Users-test-summary");
+  await writeClaudeSession(project, "sess-summary", [
+    userTextLine("sess-summary", "Ship the real migration fix", "2026-03-02T12:00:00.000Z"),
+    JSON.stringify({
+      type: "user",
+      sessionId: "sess-summary",
+      timestamp: "2026-03-02T12:05:00.000Z",
+      message: {
+        role: "user",
+        content: [{
+          type: "text",
+          text: "[Request interrupted by user for tool use]"
+        }]
+      }
+    })
+  ]);
+
+  const claudeStore = new ClaudeSessionStore({ claudeHome });
+  const exported = await exportClaudeSessions({
+    itemIds: [encodeClaudeItemId("sess-summary")],
+    ownershipConfirmed: true,
+    claudeHome,
+    exportRoot,
+    claudeStore
+  });
+
+  assert.match(exported.promptText, /Goal: Ship the real migration fix/);
+  assert.doesNotMatch(exported.promptText, /Goal: \[Request interrupted by user for tool use\]/);
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+  await fs.rm(exportRoot, { recursive: true, force: true });
+});
+
 test("exportClaudeSessions rejects non-claude item id", async () => {
   const claudeHome = await createTempDir("session-hub-export-invalid-");
   const exportRoot = await createTempDir("session-hub-export-invalid-out-");
@@ -314,14 +350,16 @@ test("exportClaudeSessions can hand off directly to a Codex thread", async () =>
     itemIds: [encodeClaudeItemId("sess-handoff")],
     ownershipConfirmed: true,
     handoffToCodex: true,
-    launchCodexApp: false,
+    launchCodexApp: true,
+    restartCodexApp: true,
     handoffCwd: handoffWorkspace,
     handoffFn: async (payload) => {
       handoffCalls.push(payload);
       return {
         threadId: "thread-handoff-1",
         turnId: "turn-handoff-1",
-        launchedCodexApp: false,
+        launchedCodexApp: true,
+        restartedCodexApp: true,
         userMessageNotificationSeen: true
       };
     },
@@ -332,9 +370,65 @@ test("exportClaudeSessions can hand off directly to a Codex thread", async () =>
 
   assert.equal(handoffCalls.length, 1);
   assert.equal(handoffCalls[0].cwd, handoffWorkspace);
-  assert.match(handoffCalls[0].prompt, /Start Prompt For Codex/);
+  assert.equal(handoffCalls[0].restartCodexApp, true);
+  assert.match(handoffCalls[0].prompt, /## Goal/);
+  assert.doesNotMatch(handoffCalls[0].prompt, /Start Prompt For Codex/);
+  assert.equal(handoffCalls[0].threadName.length > 0, true);
   assert.equal(exported.codexHandoff.ok, true);
   assert.equal(exported.codexHandoff.threadId, "thread-handoff-1");
+  assert.equal(exported.codexHandoff.threadName, handoffCalls[0].threadName);
+  assert.equal(exported.codexHandoff.restartedCodexApp, true);
+  assert.equal(exported.codexHandoff.mode, "inline-pack");
+  assert.equal(exported.codexHandoff.trimmed, false);
+  assert.equal(exported.codexHandoff.inlineChars > 0, true);
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+  await fs.rm(exportRoot, { recursive: true, force: true });
+});
+
+test("exportClaudeSessions trims oversized inline handoff packs", async () => {
+  const claudeHome = await createTempDir("session-hub-export-inline-trim-");
+  const exportRoot = await createTempDir("session-hub-export-inline-trim-out-");
+  const project = path.join(claudeHome, "projects", "-Users-test-inline-trim");
+  const lines = [];
+  for (let index = 0; index < 420; index += 1) {
+    const minute = String(index % 60).padStart(2, "0");
+    const second = String(index % 60).padStart(2, "0");
+    lines.push(userTextLine(
+      "sess-inline-trim",
+      `Large context item ${index} ${"x".repeat(180)}`,
+      `2026-03-02T17:${minute}:${second}.000Z`
+    ));
+  }
+  await writeClaudeSession(project, "sess-inline-trim", lines);
+
+  const handoffCalls = [];
+  const claudeStore = new ClaudeSessionStore({ claudeHome });
+  const exported = await exportClaudeSessions({
+    itemIds: [encodeClaudeItemId("sess-inline-trim")],
+    ownershipConfirmed: true,
+    handoffToCodex: true,
+    handoffFn: async (payload) => {
+      handoffCalls.push(payload);
+      return {
+        threadId: "thread-inline-trim",
+        turnId: "turn-inline-trim",
+        launchedCodexApp: false,
+        userMessageNotificationSeen: true
+      };
+    },
+    claudeHome,
+    exportRoot,
+    claudeStore
+  });
+
+  assert.equal(handoffCalls.length, 1);
+  assert.equal(exported.codexHandoff.ok, true);
+  assert.equal(exported.codexHandoff.mode, "inline-pack");
+  assert.equal(exported.codexHandoff.trimmed, true);
+  assert.equal(exported.codexHandoff.inlineChars <= 8000, true);
+  assert.equal(handoffCalls[0].trimmed, true);
+  assert.equal(handoffCalls[0].inlineChars <= 8000, true);
 
   await fs.rm(claudeHome, { recursive: true, force: true });
   await fs.rm(exportRoot, { recursive: true, force: true });
@@ -364,6 +458,7 @@ test("exportClaudeSessions still succeeds when Codex handoff fails", async () =>
   assert.equal(exported.codexHandoff.ok, false);
   assert.match(exported.codexHandoff.error, /mock handoff failure/);
   assert.ok(await pathExists(exported.files.promptMarkdown));
+  assert.equal(exported.codexHandoff.mode, "inline-pack");
 
   await fs.rm(claudeHome, { recursive: true, force: true });
   await fs.rm(exportRoot, { recursive: true, force: true });

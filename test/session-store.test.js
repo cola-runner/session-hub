@@ -131,6 +131,63 @@ test("rollout first user message takes priority over desktop global title", asyn
   await fs.rm(codexHome, { recursive: true, force: true });
 });
 
+test("Claude import sessions use the first handoff line as title", async () => {
+  const codexHome = await createTempDir();
+  const store = new SessionStore({ codexHome });
+
+  const threadId = "claude-import-thread-1";
+  const sessionPath = path.join(
+    codexHome,
+    `sessions/2026/02/08/rollout-2026-02-08T03-11-52-${threadId}.jsonl`
+  );
+
+  await writeRolloutFile(
+    sessionPath,
+    `{"type":"session_meta","payload":{"id":"${threadId}","source":"vscode"}}\n` +
+      '{"type":"event_msg","payload":{"type":"user_message","message":"nebula-kit · Git username setup\\n\\nImported Claude context for this Codex thread.\\n\\nFor this first turn only:\\n- Do not run tools."}}\n'
+  );
+
+  const listed = await store.listSessions();
+  assert.equal(listed.items[0].title, "nebula-kit · Git username setup");
+  assert.equal(listed.items[0].hasUserMessage, true);
+  assert.equal(listed.items[0].isSystemMessage, false);
+
+  await fs.rm(codexHome, { recursive: true, force: true });
+});
+
+test("legacy Claude import sessions fall back to desktop thread title", async () => {
+  const codexHome = await createTempDir();
+  const store = new SessionStore({ codexHome });
+
+  const threadId = "claude-import-legacy-thread-1";
+  const sessionPath = path.join(
+    codexHome,
+    `sessions/2026/02/08/rollout-2026-02-08T03-11-52-${threadId}.jsonl`
+  );
+
+  await writeRolloutFile(
+    sessionPath,
+    `{"type":"session_meta","payload":{"id":"${threadId}","source":"vscode"}}\n` +
+      '{"type":"event_msg","payload":{"type":"user_message","message":"You are opening a fresh Codex thread migrated from Claude Code.\\n\\nFor this first turn only:\\n- Do not run tools."}}\n'
+  );
+
+  await writeGlobalState(codexHome, {
+    "thread-titles": {
+      titles: {
+        [threadId]: "nebula-kit · DNS verification"
+      },
+      order: [threadId]
+    }
+  });
+
+  const listed = await store.listSessions();
+  assert.equal(listed.items[0].title, "nebula-kit · DNS verification");
+  assert.equal(listed.items[0].hasUserMessage, true);
+  assert.equal(listed.items[0].isSystemMessage, false);
+
+  await fs.rm(codexHome, { recursive: true, force: true });
+});
+
 test("system session is filtered out when first user message is skill trigger", async () => {
   const codexHome = await createTempDir();
   const store = new SessionStore({ codexHome });

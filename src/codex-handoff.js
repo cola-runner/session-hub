@@ -6,6 +6,10 @@ const path = require("node:path");
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const MAX_CAPTURE_BYTES = 2 * 1024 * 1024;
 const MAX_INLINE_PROMPT_CHARS = 12000;
+const MAX_THREAD_NAME_CHARS = 96;
+const DESKTOP_STATE_RETRY_ATTEMPTS = 5;
+const DESKTOP_STATE_RETRY_DELAY_MS = 150;
+const APP_RESTART_SETTLE_DELAY_MS = 1200;
 
 function trySpawnDetached({ spawnImpl = spawn, command, args = [] } = {}) {
   try {
@@ -49,6 +53,65 @@ function tryLaunchCodexApp({ spawnImpl = spawn, cwd, threadId, platform = proces
   return launchedWorkspace || openedThread;
 }
 
+async function runCommandBestEffort({
+  spawnImpl = spawn,
+  command,
+  args = [],
+  timeoutMs = 5000
+} = {}) {
+  let child = null;
+  try {
+    child = spawnImpl(command, args, {
+      stdio: "ignore"
+    });
+  } catch {
+    return false;
+  }
+
+  if (!child || typeof child.once !== "function") {
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        if (!child.killed && typeof child.kill === "function") {
+          child.kill("SIGTERM");
+        }
+      } catch {
+        // best effort
+      }
+      finish(false);
+    }, timeoutMs);
+
+    child.once("error", () => finish(false));
+    child.once("close", () => finish(true));
+  });
+}
+
+async function tryRestartCodexApp({ spawnImpl = spawn, platform = process.platform } = {}) {
+  if (platform !== "darwin") {
+    return false;
+  }
+
+  await runCommandBestEffort({
+    spawnImpl,
+    command: "osascript",
+    args: ["-e", 'tell application "Codex" to quit']
+  });
+  await delay(APP_RESTART_SETTLE_DELAY_MS);
+  return true;
+}
+
 function appendWithCap(current, chunk) {
   const next = current + chunk;
   if (Buffer.byteLength(next, "utf8") <= MAX_CAPTURE_BYTES) {
@@ -74,27 +137,53 @@ function clipPrompt(prompt) {
     : trimmedPrompt;
 }
 
-function buildHandoffMessage({ prompt, cwd, promptFilePath, contextFilePath } = {}) {
-  const projectName = projectNameFromCwd(cwd);
-  const clippedPrompt = clipPrompt(prompt);
+function sanitizeThreadName(value, maxLength = MAX_THREAD_NAME_CHARS) {
+  const normalized = String(value || "")
+    .replace(/\0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  const chars = Array.from(normalized);
+  if (chars.length <= maxLength) {
+    return normalized;
+  }
+  return `${chars.slice(0, maxLength - 1).join("")}…`;
+}
 
-  if (promptFilePath) {
-    const lines = [
-      `Claude import package ready for ${projectName}.`,
-      `Prompt file: ${String(promptFilePath)}`
-    ];
-    if (contextFilePath) {
-      lines.push(`Context file: ${String(contextFilePath)}`);
-    }
-    lines.push(
-      "",
-      "For this turn only: do not run tools and do not edit files.",
-      "Reply with one short confirmation that the package was loaded."
-    );
-    return lines.join("\n");
+function defaultThreadName(cwd) {
+  const projectName = projectNameFromCwd(cwd);
+  return sanitizeThreadName(`Imported from Claude: ${projectName}`);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildHandoffMessage({ prompt, cwd, threadName } = {}) {
+  const clippedPrompt = clipPrompt(prompt);
+  if (!clippedPrompt) {
+    return "";
   }
 
-  return clippedPrompt;
+  const resolvedThreadName = sanitizeThreadName(threadName) || defaultThreadName(cwd);
+  return [
+    resolvedThreadName,
+    "",
+    "Imported Claude context for this Codex thread.",
+    "",
+    "For this first turn only:",
+    "- Do not run tools.",
+    "- Do not edit files.",
+    "- Reply with one short confirmation that the context was loaded.",
+    "",
+    "Migrated context:",
+    "",
+    clippedPrompt
+  ].join("\n");
 }
 
 function parseJsonLine(line) {
@@ -164,7 +253,7 @@ function extractThreadIdFromOutput(outputText) {
   return match ? match[0] : null;
 }
 
-async function updateDesktopThreadOrder({ threadId, cwd } = {}) {
+async function updateDesktopThreadOrder({ threadId, cwd, threadName } = {}) {
   const normalizedThreadId = typeof threadId === "string" ? threadId.trim() : "";
   if (!UUID_RE.test(normalizedThreadId)) {
     return;
@@ -174,53 +263,75 @@ async function updateDesktopThreadOrder({ threadId, cwd } = {}) {
     ? String(process.env.CODEX_HOME)
     : path.join(os.homedir(), ".codex");
   const statePath = path.join(codexHome, ".codex-global-state.json");
+  const preferredTitle = sanitizeThreadName(threadName) || defaultThreadName(cwd);
 
-  let parsed;
-  try {
-    const raw = await fs.readFile(statePath, "utf8");
-    parsed = JSON.parse(raw);
-  } catch {
-    return;
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    return;
-  }
-
-  const threadTitlesRaw = parsed["thread-titles"];
-  const threadTitles = threadTitlesRaw && typeof threadTitlesRaw === "object"
-    ? threadTitlesRaw
-    : {};
-  const titlesRaw = threadTitles.titles;
-  const orderRaw = threadTitles.order;
-
-  const titles = titlesRaw && typeof titlesRaw === "object"
-    ? { ...titlesRaw }
-    : {};
-  const order = Array.isArray(orderRaw)
-    ? orderRaw.filter((entry) => typeof entry === "string")
-    : [];
-
-  const projectName = projectNameFromCwd(cwd);
-  if (!titles[normalizedThreadId]) {
-    titles[normalizedThreadId] = projectName;
-  }
-
-  parsed["thread-titles"] = {
-    ...threadTitles,
-    titles,
-    order: [normalizedThreadId, ...order.filter((entry) => entry !== normalizedThreadId)]
-  };
-
-  const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    await fs.writeFile(tmpPath, JSON.stringify(parsed), "utf8");
-    await fs.rename(tmpPath, statePath);
-  } catch {
+  for (let attempt = 0; attempt < DESKTOP_STATE_RETRY_ATTEMPTS; attempt += 1) {
+    let parsed;
     try {
-      await fs.rm(tmpPath, { force: true });
+      const raw = await fs.readFile(statePath, "utf8");
+      parsed = JSON.parse(raw);
     } catch {
-      // best effort cleanup
+      if (attempt + 1 < DESKTOP_STATE_RETRY_ATTEMPTS) {
+        await delay(DESKTOP_STATE_RETRY_DELAY_MS);
+      }
+      continue;
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+      return;
+    }
+
+    const threadTitlesRaw = parsed["thread-titles"];
+    const threadTitles = threadTitlesRaw && typeof threadTitlesRaw === "object"
+      ? threadTitlesRaw
+      : {};
+    const titlesRaw = threadTitles.titles;
+    const orderRaw = threadTitles.order;
+
+    const titles = titlesRaw && typeof titlesRaw === "object"
+      ? { ...titlesRaw }
+      : {};
+    const order = Array.isArray(orderRaw)
+      ? orderRaw.filter((entry) => typeof entry === "string")
+      : [];
+
+    titles[normalizedThreadId] = preferredTitle;
+
+    parsed["thread-titles"] = {
+      ...threadTitles,
+      titles,
+      order: [normalizedThreadId, ...order.filter((entry) => entry !== normalizedThreadId)]
+    };
+
+    const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now()}-${attempt}`;
+    try {
+      await fs.writeFile(tmpPath, JSON.stringify(parsed), "utf8");
+      await fs.rename(tmpPath, statePath);
+
+      const saved = JSON.parse(await fs.readFile(statePath, "utf8"));
+      const savedTitles = saved["thread-titles"] && typeof saved["thread-titles"] === "object"
+        ? saved["thread-titles"]
+        : {};
+      const savedOrder = Array.isArray(savedTitles.order) ? savedTitles.order : [];
+      const savedTitlesMap = savedTitles.titles && typeof savedTitles.titles === "object"
+        ? savedTitles.titles
+        : {};
+      if (
+        savedOrder[0] === normalizedThreadId
+        && savedTitlesMap[normalizedThreadId] === preferredTitle
+      ) {
+        return;
+      }
+    } catch {
+      try {
+        await fs.rm(tmpPath, { force: true });
+      } catch {
+        // best effort cleanup
+      }
+    }
+
+    if (attempt + 1 < DESKTOP_STATE_RETRY_ATTEMPTS) {
+      await delay(DESKTOP_STATE_RETRY_DELAY_MS);
     }
   }
 }
@@ -229,6 +340,7 @@ function createAppServerRpcClient({
   spawnImpl = spawn,
   cwd,
   message,
+  threadName,
   timeoutMs = 60000
 } = {}) {
   const child = spawnImpl("codex", ["app-server", "--listen", "stdio://"], {
@@ -245,7 +357,9 @@ function createAppServerRpcClient({
   let nextRequestId = 1;
   let initializeRequestId = null;
   let threadStartRequestId = null;
+  let threadNameSetRequestId = null;
   let turnStartRequestId = null;
+  const normalizedThreadName = sanitizeThreadName(threadName);
 
   const state = {
     threadId: null,
@@ -273,13 +387,29 @@ function createAppServerRpcClient({
     return id;
   };
 
-  const sendNotification = (method, params) => {
-    sendJson({
-      jsonrpc: "2.0",
-      method,
-      params
-    });
-  };
+    const sendNotification = (method, params) => {
+      sendJson({
+        jsonrpc: "2.0",
+        method,
+        params
+      });
+    };
+
+    const startTurn = () => {
+      turnStartRequestId = sendRequest("turn/start", {
+        threadId: state.threadId,
+        input: [{
+          type: "text",
+          text: message,
+          text_elements: []
+        }],
+        cwd,
+        approvalPolicy: "never",
+        sandboxPolicy: {
+          type: "dangerFullAccess"
+        }
+      });
+    };
 
   const closeGracefully = () => {
     if (child.stdin && typeof child.stdin.end === "function") {
@@ -353,6 +483,11 @@ function createAppServerRpcClient({
       if (Object.prototype.hasOwnProperty.call(messageObj, "id")) {
         const responseId = String(messageObj.id);
         if (messageObj.error) {
+          if (responseId === threadNameSetRequestId) {
+            threadNameSetRequestId = null;
+            startTurn();
+            return;
+          }
           fail(new Error(`codex app-server request failed (${responseId}): ${JSON.stringify(messageObj.error)}`));
           return;
         }
@@ -377,19 +512,20 @@ function createAppServerRpcClient({
             return;
           }
 
-          turnStartRequestId = sendRequest("turn/start", {
-            threadId: state.threadId,
-            input: [{
-              type: "text",
-              text: message,
-              text_elements: []
-            }],
-            cwd,
-            approvalPolicy: "never",
-            sandboxPolicy: {
-              type: "dangerFullAccess"
-            }
-          });
+          if (normalizedThreadName) {
+            threadNameSetRequestId = sendRequest("thread/name/set", {
+              threadId: state.threadId,
+              name: normalizedThreadName
+            });
+          } else {
+            startTurn();
+          }
+          return;
+        }
+
+        if (responseId === threadNameSetRequestId) {
+          threadNameSetRequestId = null;
+          startTurn();
           return;
         }
 
@@ -547,7 +683,11 @@ function createAppServerRpcClient({
  * @param {string} [options.promptFilePath]
  * @param {string} [options.contextFilePath]
  * @param {string} [options.cwd]
+ * @param {string} [options.mode]
+ * @param {boolean} [options.trimmed]
+ * @param {number} [options.inlineChars]
  * @param {boolean} [options.launchCodexApp]
+ * @param {boolean} [options.restartCodexApp]
  * @param {boolean} [options.syncDesktopState]
  * @param {number} [options.timeoutMs]
  * @param {Function} [options.spawnImpl]
@@ -561,15 +701,20 @@ async function handoffToCodexThread(options) {
 
   const cwd = options.cwd ? String(options.cwd) : process.cwd();
   const launchCodexApp = options.launchCodexApp !== false;
+  const restartCodexApp = options.restartCodexApp === true;
   const syncDesktopState = options.syncDesktopState !== false;
   const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 60000;
   const spawnImpl = options.spawnImpl || spawn;
   const platform = options.platform ? String(options.platform) : process.platform;
+  const handoffMode = options.mode ? String(options.mode) : "inline-pack";
+  const threadName = sanitizeThreadName(options.threadName) || defaultThreadName(cwd);
+  const inlineChars = Number.isFinite(options.inlineChars)
+    ? Number(options.inlineChars)
+    : Array.from(prompt).length;
   const message = buildHandoffMessage({
     prompt,
     cwd,
-    promptFilePath: options.promptFilePath,
-    contextFilePath: options.contextFilePath
+    threadName
   });
 
   if (!message) {
@@ -580,24 +725,35 @@ async function handoffToCodexThread(options) {
     spawnImpl,
     cwd,
     message,
+    threadName,
     timeoutMs
   });
 
-  const launchedCodexApp = launchCodexApp
-    ? tryLaunchCodexApp({ spawnImpl, cwd, threadId: rpcResult.threadId, platform })
+  const restartedCodexApp = launchCodexApp && restartCodexApp
+    ? await tryRestartCodexApp({ spawnImpl, platform })
     : false;
 
   if (syncDesktopState) {
     await updateDesktopThreadOrder({
       threadId: rpcResult.threadId,
-      cwd
+      cwd,
+      threadName
     });
   }
+
+  const launchedCodexApp = launchCodexApp
+    ? tryLaunchCodexApp({ spawnImpl, cwd, threadId: rpcResult.threadId, platform })
+    : false;
 
   return {
     threadId: rpcResult.threadId,
     turnId: rpcResult.turnId || null,
     launchedCodexApp,
+    restartedCodexApp,
+    mode: handoffMode,
+    threadName,
+    trimmed: options.trimmed === true,
+    inlineChars,
     userMessageNotificationSeen: rpcResult.userMessageNotificationSeen,
     turnCompletedNotificationSeen: rpcResult.turnCompletedNotificationSeen,
     turnStatus: rpcResult.turnStatus || null

@@ -380,6 +380,7 @@ async function startServer({
           : "layered-trim";
         const handoffToCodex = parseBooleanField(payload, "handoffToCodex", false);
         const launchCodexApp = parseBooleanField(payload, "launchCodexApp", true);
+        const restartCodexApp = parseBooleanField(payload, "restartCodexApp", false);
 
         try {
           const exported = await exportClaudeSessions({
@@ -390,6 +391,7 @@ async function startServer({
             budgetStrategy,
             handoffToCodex,
             launchCodexApp,
+            restartCodexApp,
             claudeHome,
             claudeStore
           });

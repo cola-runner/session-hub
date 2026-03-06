@@ -18,6 +18,10 @@ const SUPPORTED_COMPRESSION = new Set(["three-layer"]);
 const SUPPORTED_BUDGET = new Set(["layered-trim"]);
 const EVIDENCE_MAX_ITEMS = 120;
 const EVIDENCE_MAX_CHARS = 12000;
+const INLINE_HANDOFF_MAX_CHARS = 8000;
+const INLINE_SESSION_LINE_LIMIT = 6;
+const MAX_THREAD_NAME_CHARS = 96;
+const INTERRUPTED_PLACEHOLDER_RE = /^\[Request interrupted by user for tool use\]$/i;
 
 /**
  * @typedef {Object} SourceRef
@@ -107,6 +111,46 @@ function clipText(value, maxLength = 260) {
   return `${chars.slice(0, maxLength - 1).join("")}…`;
 }
 
+function projectNameFromPath(value) {
+  return String(value || "")
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .pop() || "";
+}
+
+function countChars(value) {
+  return Array.from(String(value || "")).length;
+}
+
+function isInterruptedPlaceholder(value) {
+  return INTERRUPTED_PLACEHOLDER_RE.test(toOneLine(value));
+}
+
+function sanitizeSignalText(value, maxLength = 260) {
+  if (isInterruptedPlaceholder(value)) {
+    return "";
+  }
+  return clipText(value, maxLength);
+}
+
+function isInterruptedContent(value) {
+  if (typeof value === "string") {
+    return isInterruptedPlaceholder(value);
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    return false;
+  }
+  return value.every((part) => {
+    if (typeof part === "string") {
+      return isInterruptedPlaceholder(part);
+    }
+    if (part && typeof part === "object" && part.type === "text" && typeof part.text === "string") {
+      return isInterruptedPlaceholder(part.text);
+    }
+    return false;
+  });
+}
+
 function stableNowStamp(date) {
   const year = String(date.getUTCFullYear());
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -115,6 +159,44 @@ function stableNowStamp(date) {
   const minute = String(date.getUTCMinutes()).padStart(2, "0");
   const second = String(date.getUTCSeconds()).padStart(2, "0");
   return `${year}${month}${day}-${hour}${minute}${second}`;
+}
+
+function isWeakThreadTitleCandidate(value) {
+  const normalized = toOneLine(value).toLowerCase();
+  return (
+    !normalized
+    || normalized === "continue"
+    || normalized === "continue here"
+    || normalized === "continue from here"
+    || normalized === "resume"
+    || normalized === "resume here"
+  );
+}
+
+function buildCodexThreadName({ sessions = [], pack, handoffCwd } = {}) {
+  const titledSession = sessions.find((session) => !isWeakThreadTitleCandidate(session.title));
+  const projectSession = sessions.find((session) => toOneLine(session.projectName));
+  const projectName = toOneLine(projectSession ? projectSession.projectName : projectNameFromPath(handoffCwd));
+  const sessionTitle = clipText(titledSession ? titledSession.title : "", 72);
+  const goalTitle = clipText(pack && pack.goal, 72);
+
+  const summary = [sessionTitle, goalTitle]
+    .map((value) => toOneLine(value))
+    .find((value) => value && !isWeakThreadTitleCandidate(value)) || "";
+
+  const fallback = projectName
+    ? `Imported from Claude: ${projectName}`
+    : "Imported from Claude";
+  if (!summary) {
+    return clipText(fallback, MAX_THREAD_NAME_CHARS);
+  }
+  if (!projectName) {
+    return clipText(summary, MAX_THREAD_NAME_CHARS);
+  }
+  if (summary.toLowerCase().includes(projectName.toLowerCase())) {
+    return clipText(summary, MAX_THREAD_NAME_CHARS);
+  }
+  return clipText(`${projectName} · ${summary}`, MAX_THREAD_NAME_CHARS);
 }
 
 function createExportId(now = new Date()) {
@@ -131,7 +213,7 @@ function sourceLabel(sourceRef) {
 
 function toolResultPreview(content) {
   if (typeof content === "string") {
-    return clipText(content, 220);
+    return sanitizeSignalText(content, 220);
   }
   if (!Array.isArray(content)) {
     return "";
@@ -141,7 +223,10 @@ function toolResultPreview(content) {
   for (const item of content) {
     if (item && typeof item === "object") {
       if (item.type === "text" && typeof item.text === "string") {
-        parts.push(clipText(item.text, 120));
+        const text = sanitizeSignalText(item.text, 120);
+        if (text) {
+          parts.push(text);
+        }
         continue;
       }
       if (item.type === "image") {
@@ -152,7 +237,10 @@ function toolResultPreview(content) {
       continue;
     }
     if (typeof item === "string") {
-      parts.push(clipText(item, 120));
+      const text = sanitizeSignalText(item, 120);
+      if (text) {
+        parts.push(text);
+      }
     }
   }
   return clipText(parts.join(" | "), 220);
@@ -177,7 +265,7 @@ function extractAssistantSignals(record, base) {
       }
 
       if (part.type === "text" && typeof part.text === "string") {
-        const text = clipText(part.text, 320);
+        const text = sanitizeSignalText(part.text, 320);
         if (text) {
           signals.push({
             ...base,
@@ -230,7 +318,7 @@ function extractAssistantSignals(record, base) {
       }
     }
   } else if (typeof content === "string") {
-    const text = clipText(content, 320);
+    const text = sanitizeSignalText(content, 320);
     if (text) {
       signals.push({
         ...base,
@@ -276,7 +364,7 @@ function extractUserSignals(record, base) {
   const content = record && record.message ? record.message.content : null;
 
   if (typeof content === "string") {
-    const text = clipText(content, 320);
+    const text = sanitizeSignalText(content, 320);
     if (text) {
       signals.push({
         ...base,
@@ -297,7 +385,7 @@ function extractUserSignals(record, base) {
       }
 
       if (part.type === "text" && typeof part.text === "string") {
-        const text = clipText(part.text, 320);
+        const text = sanitizeSignalText(part.text, 320);
         if (text) {
           signals.push({
             ...base,
@@ -313,6 +401,9 @@ function extractUserSignals(record, base) {
       }
 
       if (part.type === "tool_result") {
+        if (isInterruptedContent(part.content)) {
+          continue;
+        }
         const preview = toolResultPreview(part.content);
         const toolUseId = clipText(part.tool_use_id || "", 48);
         const prefix = part.is_error ? "Tool result error" : "Tool result";
@@ -331,7 +422,7 @@ function extractUserSignals(record, base) {
           detail: preview || null,
           command: null,
           isError: Boolean(part.is_error),
-          scoreHint: part.is_error ? 98 : 64
+          scoreHint: part.is_error ? 82 : 24
         });
       }
     }
@@ -379,7 +470,7 @@ function extractProgressSignals(record, base) {
         detail: message,
         command: null,
         isError: false,
-        scoreHint: 38
+        scoreHint: 22
       });
     }
   }
@@ -394,7 +485,7 @@ function extractProgressSignals(record, base) {
       detail: null,
       command: null,
       isError: false,
-      scoreHint: 28
+      scoreHint: 12
     });
   }
 
@@ -435,7 +526,7 @@ function extractSystemSignals(record, base) {
     detail: record.error ? clipText(record.error, 280) : null,
     command: null,
     isError: Boolean(record.error),
-    scoreHint: record.error ? 90 : 18
+    scoreHint: record.error ? 90 : 10
   }];
 }
 
@@ -452,7 +543,7 @@ function extractQueueSignals(record, base) {
     detail: content || null,
     command: null,
     isError: false,
-    scoreHint: 14
+    scoreHint: 8
   }];
 }
 
@@ -468,7 +559,7 @@ function extractSnapshotSignals(record, base) {
     detail: null,
     command: null,
     isError: false,
-    scoreHint: 10
+    scoreHint: 4
   }];
 }
 
@@ -812,6 +903,191 @@ function renderPromptMarkdown(pack, options) {
   return lines.join("\n");
 }
 
+function buildInlineSessionLines(sessions) {
+  const visibleSessions = Array.isArray(sessions)
+    ? sessions.slice(0, INLINE_SESSION_LINE_LIMIT)
+    : [];
+
+  const lines = visibleSessions.map((session) => {
+    return `- ${session.threadId} (${session.projectName || "-"}, ${session.state})`;
+  });
+
+  const hiddenCount = Array.isArray(sessions) ? sessions.length - visibleSessions.length : 0;
+  if (hiddenCount > 0) {
+    lines.push(`- ${hiddenCount} more session(s) included in the local export package`);
+  }
+
+  return lines;
+}
+
+function renderInlineHandoffPack(pack, options = {}) {
+  const sessionLines = buildInlineSessionLines(options.sessions || []);
+  let goalMax = 360;
+  let currentStateMax = 640;
+  let decisionLimit = pack.decisions.length;
+  let decisionMax = 220;
+  let failureLimit = pack.failures.length;
+  let failureMax = 220;
+  let commandLimit = pack.commandTrace.length;
+  let commandMax = 180;
+  let evidenceLimit = pack.selectedEvidence.length;
+  let evidenceMax = 160;
+  let trimmed = false;
+
+  const buildText = () => {
+    const lines = [
+      "Claude Code migration context for this new Codex thread.",
+      "",
+      "## Sessions Included",
+      ...sessionLines,
+      "",
+      "## Goal",
+      clipText(pack.goal, goalMax),
+      "",
+      "## Current State",
+      clipText(pack.currentState, currentStateMax),
+      "",
+      "## Immediate Next Steps",
+      ...pack.nextSteps.map((step, index) => `${index + 1}. ${clipText(step, 220)}`),
+      ""
+    ];
+
+    if (decisionLimit > 0) {
+      lines.push("## Key Decisions");
+      lines.push(...pack.decisions.slice(0, decisionLimit).map((line) => `- ${clipText(line, decisionMax)}`));
+      lines.push("");
+    }
+
+    if (failureLimit > 0) {
+      lines.push("## Failures / Blockers");
+      lines.push(...pack.failures.slice(0, failureLimit).map((line) => `- ${clipText(line, failureMax)}`));
+      lines.push("");
+    }
+
+    if (commandLimit > 0) {
+      lines.push("## Command Trace");
+      lines.push(...pack.commandTrace.slice(0, commandLimit).map((line) => `- ${clipText(line, commandMax)}`));
+      lines.push("");
+    }
+
+    if (evidenceLimit > 0) {
+      lines.push("## High-Value Evidence");
+      lines.push(
+        ...pack.selectedEvidence.slice(0, evidenceLimit).map((entry) => {
+          const excerpt = clipText(entry.excerpt, evidenceMax);
+          return `- ${entry.id} [${entry.label}] ${excerpt}`;
+        })
+      );
+      lines.push("");
+    }
+
+    lines.push("If more detail is needed later, ask for the specific evidence ID or consult the local export files.");
+    lines.push("");
+    return lines.join("\n");
+  };
+
+  let text = buildText();
+
+  const reducers = [
+    () => {
+      if (evidenceLimit <= 2) {
+        return false;
+      }
+      const nextLimit = evidenceLimit > 12
+        ? Math.max(2, evidenceLimit - Math.max(2, Math.ceil((evidenceLimit - 12) / 3)))
+        : evidenceLimit - 1;
+      evidenceLimit = nextLimit;
+      return true;
+    },
+    () => {
+      if (evidenceMax <= 120) {
+        return false;
+      }
+      evidenceMax -= 20;
+      return true;
+    },
+    () => {
+      if (commandLimit <= 2) {
+        return false;
+      }
+      commandLimit -= 1;
+      return true;
+    },
+    () => {
+      if (commandMax <= 120) {
+        return false;
+      }
+      commandMax -= 20;
+      return true;
+    },
+    () => {
+      if (decisionLimit <= 2) {
+        return false;
+      }
+      decisionLimit -= 1;
+      return true;
+    },
+    () => {
+      if (decisionMax <= 140) {
+        return false;
+      }
+      decisionMax -= 20;
+      return true;
+    },
+    () => {
+      if (currentStateMax <= 340) {
+        return false;
+      }
+      currentStateMax -= 60;
+      return true;
+    },
+    () => {
+      if (failureLimit <= 1) {
+        return false;
+      }
+      failureLimit -= 1;
+      return true;
+    },
+    () => {
+      if (failureMax <= 140) {
+        return false;
+      }
+      failureMax -= 20;
+      return true;
+    },
+    () => {
+      if (goalMax <= 220) {
+        return false;
+      }
+      goalMax -= 20;
+      return true;
+    }
+  ];
+
+  let reducerIndex = 0;
+  while (countChars(text) > INLINE_HANDOFF_MAX_CHARS && reducerIndex < reducers.length) {
+    const changed = reducers[reducerIndex]();
+    if (!changed) {
+      reducerIndex += 1;
+      continue;
+    }
+    trimmed = true;
+    text = buildText();
+  }
+
+  if (countChars(text) > INLINE_HANDOFF_MAX_CHARS) {
+    trimmed = true;
+    const truncated = Array.from(text).slice(0, INLINE_HANDOFF_MAX_CHARS - 14).join("");
+    text = `${truncated}\n\n[truncated]`;
+  }
+
+  return {
+    text,
+    trimmed,
+    charCount: countChars(text)
+  };
+}
+
 function parseBooleanFlag(value, fallbackValue) {
   if (typeof value === "boolean") {
     return value;
@@ -1086,6 +1362,7 @@ async function inferHandoffCwdFromRawRecords(rawRecords) {
  * @param {string} [options.budgetStrategy]
  * @param {boolean} [options.handoffToCodex]
  * @param {boolean} [options.launchCodexApp]
+ * @param {boolean} [options.restartCodexApp]
  * @param {string} [options.handoffCwd]
  * @param {Function} [options.handoffFn]
  * @param {string} [options.exportRoot]
@@ -1127,6 +1404,7 @@ async function exportClaudeSessions(options) {
   );
   const handoffToCodex = parseBooleanFlag(options.handoffToCodex, false);
   const launchCodexApp = parseBooleanFlag(options.launchCodexApp, true);
+  const restartCodexApp = parseBooleanFlag(options.restartCodexApp, false);
   const handoffFn = typeof options.handoffFn === "function"
     ? options.handoffFn
     : handoffToCodexThread;
@@ -1150,6 +1428,10 @@ async function exportClaudeSessions(options) {
   const generatedAt = new Date().toISOString();
 
   const promptMarkdown = renderPromptMarkdown(promptPack, {
+    generatedAt,
+    sessions: selected.found
+  });
+  const inlineHandoff = renderInlineHandoffPack(promptPack, {
     generatedAt,
     sessions: selected.found
   });
@@ -1194,7 +1476,8 @@ async function exportClaudeSessions(options) {
       compression,
       budgetStrategy,
       handoffToCodex,
-      launchCodexApp
+      launchCodexApp,
+      restartCodexApp
     },
     summary: {
       goal: promptPack.goal,
@@ -1247,23 +1530,41 @@ async function exportClaudeSessions(options) {
     const handoffCwd = options.handoffCwd !== undefined && options.handoffCwd !== null
       ? path.resolve(String(options.handoffCwd))
       : inferredCwd || await resolveHandoffCwd(options, selected.found);
+    const threadName = buildCodexThreadName({
+      sessions: selected.found,
+      pack: promptPack,
+      handoffCwd
+    });
     try {
       const handoff = await handoffFn({
-        prompt: promptMarkdown,
+        prompt: inlineHandoff.text,
         promptFilePath: files.promptMarkdown,
         contextFilePath: files.contextJson,
         cwd: handoffCwd,
-        launchCodexApp
+        launchCodexApp,
+        restartCodexApp,
+        threadName,
+        mode: "inline-pack",
+        trimmed: inlineHandoff.trimmed,
+        inlineChars: inlineHandoff.charCount
       });
       codexHandoff = {
         ok: true,
         cwd: handoffCwd,
-        ...handoff
+        threadName,
+        ...handoff,
+        mode: "inline-pack",
+        trimmed: inlineHandoff.trimmed,
+        inlineChars: inlineHandoff.charCount
       };
     } catch (error) {
       codexHandoff = {
         ok: false,
         cwd: handoffCwd,
+        threadName,
+        mode: "inline-pack",
+        trimmed: inlineHandoff.trimmed,
+        inlineChars: inlineHandoff.charCount,
         error: error instanceof Error ? error.message : String(error)
       };
     }
@@ -1282,5 +1583,6 @@ async function exportClaudeSessions(options) {
 module.exports = {
   buildThreeLayerPack,
   collectClaudeEventsFromItems,
-  exportClaudeSessions
+  exportClaudeSessions,
+  renderInlineHandoffPack
 };

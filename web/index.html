@@ -17,191 +17,283 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">// community utility</p>
-          <h1>Session Hub</h1>
-          <p class="subline">Local batch management for CLI conversation history</p>
-          <p id="config-info" class="muted"></p>
+      <section class="hero-shell">
+        <header class="topbar">
+          <div class="topbar-copy">
+            <p class="eyebrow">// community utility</p>
+            <h1>Session Hub</h1>
+            <p class="subline">Rehydrate stranded CLI history into fresh Codex threads without leaving the local machine.</p>
+            <div class="hero-flags">
+              <span class="hero-flag">Local-only</span>
+              <span class="hero-flag">Batch transfer</span>
+              <span class="hero-flag">Overflow evidence saved</span>
+            </div>
+          </div>
+          <div class="top-actions">
+            <button id="theme-toggle" class="theme-toggle">Dark</button>
+            <button id="refresh-all" class="btn ghost">Refresh</button>
+            <button id="cleanup-expired" class="btn warning">Cleanup Expired Trash</button>
+          </div>
+        </header>
+
+        <div class="hero-grid">
+          <section class="hero-panel hero-panel-main">
+            <p class="panel-kicker">Thread Intake</p>
+            <h2 class="hero-title">Turn abandoned Claude sessions into new Codex context, not dead export files.</h2>
+            <p class="hero-copyline">
+              Index local session stores, compress the live engineering state, inject it into a fresh Codex thread, and keep the full evidence package on disk when the inline payload has to be cut down.
+            </p>
+
+            <div class="hero-stats">
+              <article class="stat-card">
+                <span class="stat-label">Codex Threads</span>
+                <strong id="stat-codex-total" class="stat-value">0</strong>
+                <span class="stat-meta">Indexed locally</span>
+              </article>
+              <article class="stat-card">
+                <span class="stat-label">Claude Active</span>
+                <strong id="stat-claude-active" class="stat-value">0</strong>
+                <span class="stat-meta">Ready to migrate</span>
+              </article>
+              <article class="stat-card">
+                <span class="stat-label">Transfer Projects</span>
+                <strong id="stat-transfer-projects" class="stat-value">0</strong>
+                <span class="stat-meta">Current intake lane</span>
+              </article>
+              <article class="stat-card">
+                <span class="stat-label">Trash Backlog</span>
+                <strong id="stat-trash-total" class="stat-value">0</strong>
+                <span class="stat-meta">Recoverable items</span>
+              </article>
+            </div>
+          </section>
+
+          <aside class="hero-panel hero-panel-side">
+            <p class="panel-kicker">Runtime</p>
+            <div class="runtime-stack">
+              <div class="runtime-item">
+                <span class="runtime-label">Mode</span>
+                <strong id="hero-mode">Session Ops</strong>
+              </div>
+              <div class="runtime-item">
+                <span class="runtime-label">Transfer</span>
+                <strong id="hero-transfer-status">Idle</strong>
+              </div>
+              <div class="runtime-item">
+                <span class="runtime-label">Scope</span>
+                <strong>Codex / Claude / Gemini</strong>
+              </div>
+            </div>
+            <p id="config-info" class="muted runtime-config"></p>
+          </aside>
         </div>
-        <div class="top-actions">
-          <button id="theme-toggle" class="theme-toggle">Dark</button>
-          <button id="refresh-all" class="btn ghost">Refresh</button>
-          <button id="cleanup-expired" class="btn warning">Cleanup Expired Trash</button>
-        </div>
-      </header>
+      </section>
 
       <section class="notice" role="note">
-        Unofficial community tool. Not affiliated with OpenAI, Anthropic, or Google.
+        Unofficial community tool. Not affiliated with OpenAI, Anthropic, or Google. All exports and handoffs stay on this machine.
       </section>
 
       <section id="feedback" class="feedback" aria-live="polite"></section>
 
-      <nav class="tabs" role="tablist">
-        <button id="tab-claude" class="tab active" role="tab" aria-selected="true">
-          Claude
-        </button>
-        <button id="tab-codex" class="tab" role="tab" aria-selected="false">
-          Codex
-        </button>
-        <button id="tab-gemini" class="tab" role="tab" aria-selected="false">
-          Gemini
-        </button>
-        <button id="tab-trash" class="tab" role="tab" aria-selected="false">Trash</button>
-      </nav>
+      <section class="workspace-shell">
+        <nav class="tabs" role="tablist">
+          <button id="tab-claude" class="tab active" role="tab" aria-selected="true">
+            Claude
+          </button>
+          <button id="tab-codex" class="tab" role="tab" aria-selected="false">
+            Codex
+          </button>
+          <button id="tab-gemini" class="tab" role="tab" aria-selected="false">
+            Gemini
+          </button>
+          <button id="tab-trash" class="tab" role="tab" aria-selected="false">Trash</button>
+        </nav>
 
-      <section id="view-codex" class="card view hidden">
-        <div class="controls">
-          <input id="codex-query" type="search" placeholder="Search Codex sessions" />
-          <div class="state-filter">
-            <button class="state-filter-btn active" data-filter="codex" data-state="all">All</button>
-            <button class="state-filter-btn" data-filter="codex" data-state="active">Active</button>
-            <button class="state-filter-btn" data-filter="codex" data-state="archived">Archived</button>
+        <section id="view-codex" class="card view hidden">
+          <div class="view-head">
+            <div>
+              <p class="panel-kicker">Codex Threads</p>
+              <h2>Control active and archived local rollouts.</h2>
+              <p class="view-summary">Keep the working set clean before and after you inject imported context.</p>
+            </div>
           </div>
-          <button id="codex-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="codex-clear-selection" class="btn ghost">Clear Selection</button>
-        </div>
 
-        <div class="batch-actions">
-          <button id="codex-action-archive" class="btn primary">Archive</button>
-          <button id="codex-action-unarchive" class="btn primary">Unarchive</button>
-          <button id="codex-action-delete" class="btn danger">Move To Trash</button>
-          <span id="codex-selection-meta" class="muted"></span>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th><input id="codex-check-all" type="checkbox" /></th>
-                <th>Title</th>
-                <th>State</th>
-                <th>Thread</th>
-                <th>Updated</th>
-                <th>Size</th>
-                <th>Relative Path</th>
-              </tr>
-            </thead>
-            <tbody id="codex-body"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="view-claude" class="card view">
-        <div class="controls">
-          <input id="claude-query" type="search" placeholder="Search Claude sessions" />
-          <div class="state-filter">
-            <button class="state-filter-btn active" data-filter="claude" data-state="all">All</button>
-            <button class="state-filter-btn" data-filter="claude" data-state="active">Active</button>
-            <button class="state-filter-btn" data-filter="claude" data-state="archived">Archived</button>
+          <div class="controls">
+            <input id="codex-query" type="search" placeholder="Search Codex sessions" />
+            <div class="state-filter">
+              <button class="state-filter-btn active" data-filter="codex" data-state="all">All</button>
+              <button class="state-filter-btn" data-filter="codex" data-state="active">Active</button>
+              <button class="state-filter-btn" data-filter="codex" data-state="archived">Archived</button>
+            </div>
+            <button id="codex-select-filtered" class="btn ghost">Select Filtered</button>
+            <button id="codex-clear-selection" class="btn ghost">Clear Selection</button>
           </div>
-          <button id="claude-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="claude-clear-selection" class="btn ghost">Clear Selection</button>
-        </div>
-        <p id="claude-transfer-hint" class="muted hidden">
-          Transfer mode: rows are grouped by project. Selecting one row migrates all active sessions in that project.
-        </p>
 
-        <div class="batch-actions">
-          <button id="claude-action-archive" class="btn primary">Archive</button>
-          <button id="claude-action-unarchive" class="btn primary">Unarchive</button>
-          <button id="claude-action-delete" class="btn danger">Move To Trash</button>
-          <button id="claude-action-export" class="btn primary">Export</button>
-          <button id="claude-action-transfer-active" class="btn primary hidden">Transfer Selected Projects To Codex</button>
-          <span id="claude-selection-meta" class="muted"></span>
-        </div>
-
-        <div id="claude-export-result" class="export-result hidden" aria-live="polite">
-          <p id="claude-export-path" class="muted"></p>
-          <p id="claude-transfer-status" class="muted hidden"></p>
-          <div class="export-actions">
-            <button id="claude-copy-prompt" class="btn primary">Copy Import Prompt</button>
+          <div class="batch-actions">
+            <button id="codex-action-archive" class="btn primary">Archive</button>
+            <button id="codex-action-unarchive" class="btn primary">Unarchive</button>
+            <button id="codex-action-delete" class="btn danger">Move To Trash</button>
+            <span id="codex-selection-meta" class="muted"></span>
           </div>
-        </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th><input id="claude-check-all" type="checkbox" /></th>
-                <th>Project</th>
-                <th>Count</th>
-                <th>Updated</th>
-                <th>Size</th>
-              </tr>
-            </thead>
-            <tbody id="claude-body"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="view-gemini" class="card view hidden">
-        <div class="controls">
-          <input id="gemini-query" type="search" placeholder="Search Gemini sessions" />
-          <div class="state-filter">
-            <button class="state-filter-btn active" data-filter="gemini" data-state="all">All</button>
-            <button class="state-filter-btn" data-filter="gemini" data-state="active">Active</button>
-            <button class="state-filter-btn" data-filter="gemini" data-state="archived">Archived</button>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="codex-check-all" type="checkbox" /></th>
+                  <th>Title</th>
+                  <th>State</th>
+                  <th>Thread</th>
+                  <th>Updated</th>
+                  <th>Size</th>
+                  <th>Relative Path</th>
+                </tr>
+              </thead>
+              <tbody id="codex-body"></tbody>
+            </table>
           </div>
-          <button id="gemini-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="gemini-clear-selection" class="btn ghost">Clear Selection</button>
-        </div>
+        </section>
 
-        <div class="batch-actions">
-          <button id="gemini-action-archive" class="btn primary">Archive</button>
-          <button id="gemini-action-unarchive" class="btn primary">Unarchive</button>
-          <button id="gemini-action-delete" class="btn danger">Move To Trash</button>
-          <span id="gemini-selection-meta" class="muted"></span>
-        </div>
+        <section id="view-claude" class="card view">
+          <div class="view-head">
+            <div>
+              <p class="panel-kicker">Claude Intake</p>
+              <h2>Select project history, compress it, and prime a new Codex thread.</h2>
+              <p class="view-summary">Transfer mode keeps the first Codex turn read-only so you can verify the migrated context before work resumes.</p>
+            </div>
+          </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th><input id="gemini-check-all" type="checkbox" /></th>
-                <th>Title</th>
-                <th>State</th>
-                <th>Project Hash</th>
-                <th>Messages</th>
-                <th>Updated</th>
-                <th>Size</th>
-              </tr>
-            </thead>
-            <tbody id="gemini-body"></tbody>
-          </table>
-        </div>
-      </section>
+          <div class="controls">
+            <input id="claude-query" type="search" placeholder="Search Claude sessions" />
+            <div class="state-filter">
+              <button class="state-filter-btn active" data-filter="claude" data-state="all">All</button>
+              <button class="state-filter-btn" data-filter="claude" data-state="active">Active</button>
+              <button class="state-filter-btn" data-filter="claude" data-state="archived">Archived</button>
+            </div>
+            <button id="claude-select-filtered" class="btn ghost">Select Filtered</button>
+            <button id="claude-clear-selection" class="btn ghost">Clear Selection</button>
+          </div>
+          <p id="claude-transfer-hint" class="muted hidden">
+            Transfer mode: rows are grouped by project. Selecting one row migrates all active sessions in that project.
+          </p>
 
-      <section id="view-trash" class="card view hidden">
-        <div class="controls">
-          <input id="trash-query" type="search" placeholder="Search trash" />
-          <button id="trash-select-filtered" class="btn ghost">Select Filtered</button>
-          <button id="trash-clear-selection" class="btn ghost">Clear Selection</button>
-        </div>
+          <div class="batch-actions">
+            <button id="claude-action-archive" class="btn primary">Archive</button>
+            <button id="claude-action-unarchive" class="btn primary">Unarchive</button>
+            <button id="claude-action-delete" class="btn danger">Move To Trash</button>
+            <button id="claude-action-export" class="btn primary">Export</button>
+            <button id="claude-action-transfer-active" class="btn primary hidden">Transfer Selected Projects To Codex</button>
+            <span id="claude-selection-meta" class="muted"></span>
+          </div>
 
-        <div class="batch-actions">
-          <button id="action-restore" class="btn primary">Restore</button>
-          <button id="action-purge" class="btn danger">Permanent Delete</button>
-          <span id="trash-selection-meta" class="muted"></span>
-        </div>
+          <div id="claude-export-result" class="export-result hidden" aria-live="polite">
+            <p id="claude-export-path" class="muted"></p>
+            <p id="claude-transfer-status" class="muted hidden"></p>
+            <div class="export-actions">
+              <button id="claude-copy-prompt" class="btn primary">Copy Full Import Prompt</button>
+            </div>
+          </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th><input id="trash-check-all" type="checkbox" /></th>
-                <th>Expired</th>
-                <th>Source</th>
-                <th>Thread</th>
-                <th>Deleted At</th>
-                <th>Expires At</th>
-                <th>Size</th>
-                <th>Original Path</th>
-              </tr>
-            </thead>
-            <tbody id="trash-body"></tbody>
-          </table>
-        </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="claude-check-all" type="checkbox" /></th>
+                  <th>Project</th>
+                  <th>Count</th>
+                  <th>Updated</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody id="claude-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-gemini" class="card view hidden">
+          <div class="view-head">
+            <div>
+              <p class="panel-kicker">Gemini Sessions</p>
+              <h2>Monitor side-provider history without leaving the same control surface.</h2>
+              <p class="view-summary">Archive, restore, and sweep stale Gemini runs from the same intake dashboard.</p>
+            </div>
+          </div>
+
+          <div class="controls">
+            <input id="gemini-query" type="search" placeholder="Search Gemini sessions" />
+            <div class="state-filter">
+              <button class="state-filter-btn active" data-filter="gemini" data-state="all">All</button>
+              <button class="state-filter-btn" data-filter="gemini" data-state="active">Active</button>
+              <button class="state-filter-btn" data-filter="gemini" data-state="archived">Archived</button>
+            </div>
+            <button id="gemini-select-filtered" class="btn ghost">Select Filtered</button>
+            <button id="gemini-clear-selection" class="btn ghost">Clear Selection</button>
+          </div>
+
+          <div class="batch-actions">
+            <button id="gemini-action-archive" class="btn primary">Archive</button>
+            <button id="gemini-action-unarchive" class="btn primary">Unarchive</button>
+            <button id="gemini-action-delete" class="btn danger">Move To Trash</button>
+            <span id="gemini-selection-meta" class="muted"></span>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="gemini-check-all" type="checkbox" /></th>
+                  <th>Title</th>
+                  <th>State</th>
+                  <th>Project Hash</th>
+                  <th>Messages</th>
+                  <th>Updated</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody id="gemini-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-trash" class="card view hidden">
+          <div class="view-head">
+            <div>
+              <p class="panel-kicker">Recovery Lane</p>
+              <h2>Restore or permanently purge sessions that left the live runway.</h2>
+              <p class="view-summary">Soft deletes stay recoverable until the retention window expires.</p>
+            </div>
+          </div>
+
+          <div class="controls">
+            <input id="trash-query" type="search" placeholder="Search trash" />
+            <button id="trash-select-filtered" class="btn ghost">Select Filtered</button>
+            <button id="trash-clear-selection" class="btn ghost">Clear Selection</button>
+          </div>
+
+          <div class="batch-actions">
+            <button id="action-restore" class="btn primary">Restore</button>
+            <button id="action-purge" class="btn danger">Permanent Delete</button>
+            <span id="trash-selection-meta" class="muted"></span>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="trash-check-all" type="checkbox" /></th>
+                  <th>Expired</th>
+                  <th>Source</th>
+                  <th>Thread</th>
+                  <th>Deleted At</th>
+                  <th>Expires At</th>
+                  <th>Size</th>
+                  <th>Original Path</th>
+                </tr>
+              </thead>
+              <tbody id="trash-body"></tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
 

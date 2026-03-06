@@ -8,6 +8,8 @@ const ROLLOUT_FILENAME_PATTERN =
   /^rollout-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(.+)\.jsonl$/;
 const MAX_TITLE_SCAN_LINES = 700;
 const USER_MESSAGE_BEGIN = "## My request for Codex:";
+const CLAUDE_HANDOFF_MARKER = "Imported Claude context for this Codex thread.";
+const LEGACY_CLAUDE_HANDOFF_MARKER = "You are opening a fresh Codex thread migrated from Claude Code.";
 
 function parseRolloutFilename(fileName) {
   const match = ROLLOUT_FILENAME_PATTERN.exec(fileName);
@@ -70,10 +72,32 @@ function extractTitleFromRecord(record) {
     record.payload.type === "user_message" &&
     typeof record.payload.message === "string"
   ) {
-    return normalizeTitle(stripUserMessagePrefix(record.payload.message));
+    const message = stripUserMessagePrefix(record.payload.message);
+    const imported = extractClaudeHandoffTitle(message);
+    if (imported.handled) {
+      return imported.title;
+    }
+    return normalizeTitle(message);
   }
 
   return null;
+}
+
+function extractClaudeHandoffTitle(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return { handled: false, title: null };
+  }
+  if (lines[0] === LEGACY_CLAUDE_HANDOFF_MARKER) {
+    return { handled: true, title: null };
+  }
+  if (lines[1] === LEGACY_CLAUDE_HANDOFF_MARKER || lines[1] === CLAUDE_HANDOFF_MARKER) {
+    return { handled: true, title: normalizeTitle(lines[0]) };
+  }
+  return { handled: false, title: null };
 }
 
 function stripUserMessagePrefix(text) {
@@ -139,9 +163,17 @@ async function readSessionSignalsFromRollout(absolutePath) {
         source = record.payload.source.trim();
       }
 
+      if (
+        record.type === "event_msg" &&
+        record.payload &&
+        record.payload.type === "user_message" &&
+        typeof record.payload.message === "string"
+      ) {
+        hasUserMessage = true;
+      }
+
       const extracted = extractTitleFromRecord(record);
       if (extracted) {
-        hasUserMessage = true;
         if (!firstUserTitle) {
           firstUserTitle = extracted;
           firstUserIsSystem = isSystemGeneratedMessage(extracted);
