@@ -390,7 +390,8 @@ class SessionStore {
     }
 
     const desktopTitle = desktopTitles.get(threadId);
-    const title = desktopTitle || signals.firstUserTitle || fallbackTitleForThread(threadId);
+    // Prefer immutable rollout user message over mutable desktop title cache.
+    const title = signals.firstUserTitle || desktopTitle || fallbackTitleForThread(threadId);
     const isSystemMessage = isSystemSession(signals);
 
     this.titleCache.set(absolutePath, {

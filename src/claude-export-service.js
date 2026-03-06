@@ -1250,6 +1250,8 @@ async function exportClaudeSessions(options) {
     try {
       const handoff = await handoffFn({
         prompt: promptMarkdown,
+        promptFilePath: files.promptMarkdown,
+        contextFilePath: files.contextJson,
         cwd: handoffCwd,
         launchCodexApp
       });

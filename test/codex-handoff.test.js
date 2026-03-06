@@ -1,0 +1,377 @@
+const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const test = require("node:test");
+
+const { handoffToCodexThread } = require("../src/codex-handoff");
+
+function createMockAppServerChild({
+  threadId = "019cbafe-1111-7222-8333-444455556666",
+  turnId = "019cbafe-9999-7222-8333-444455556666",
+  closeCode = 0,
+  emitUserMessageBeforeTurnStartResponse = false,
+  turnStatus = "completed"
+} = {}) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.killed = false;
+  child.requests = [];
+
+  let closed = false;
+  let stdinBuffer = "";
+  let activeThreadId = threadId;
+  let activeTurnId = turnId;
+
+  const emitJson = (payload) => {
+    setImmediate(() => {
+      child.stdout.emit("data", Buffer.from(`${JSON.stringify(payload)}\n`));
+    });
+  };
+
+  const emitUserMessage = () => {
+    emitJson({
+      method: "codex/event/user_message",
+      params: {
+        threadId: activeThreadId,
+        item: {
+          type: "userMessage"
+        }
+      }
+    });
+  };
+
+  const closeOnce = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    setImmediate(() => {
+      child.emit("close", closeCode);
+    });
+  };
+
+  child.stdin = {
+    write(chunk) {
+      stdinBuffer += chunk.toString("utf8");
+
+      let newlineIndex = -1;
+      while ((newlineIndex = stdinBuffer.indexOf("\n")) >= 0) {
+        const line = stdinBuffer.slice(0, newlineIndex).trim();
+        stdinBuffer = stdinBuffer.slice(newlineIndex + 1);
+        if (!line) {
+          continue;
+        }
+
+        const request = JSON.parse(line);
+        child.requests.push(request);
+
+        if (request.method === "initialize") {
+          emitJson({
+            id: request.id,
+            result: {
+              userAgent: "Codex Desktop/0.107.0"
+            }
+          });
+          continue;
+        }
+
+        if (request.method === "initialized") {
+          continue;
+        }
+
+        if (request.method === "thread/start") {
+          activeThreadId = threadId;
+          emitJson({
+            id: request.id,
+            result: {
+              thread: {
+                id: activeThreadId
+              }
+            }
+          });
+          continue;
+        }
+
+        if (request.method === "turn/start") {
+          activeTurnId = turnId;
+          if (emitUserMessageBeforeTurnStartResponse) {
+            emitUserMessage();
+          }
+          emitJson({
+            id: request.id,
+            result: {
+              turn: {
+                id: activeTurnId,
+                items: [],
+                status: "inProgress",
+                error: null
+              }
+            }
+          });
+          if (!emitUserMessageBeforeTurnStartResponse) {
+            emitUserMessage();
+          }
+          emitJson({
+            method: "turn/completed",
+            params: {
+              threadId: activeThreadId,
+              turn: {
+                id: activeTurnId,
+                items: [],
+                status: turnStatus,
+                error: null
+              }
+            }
+          });
+          closeOnce();
+          continue;
+        }
+      }
+    },
+    end() {
+      closeOnce();
+    }
+  };
+
+  child.kill = () => {
+    child.killed = true;
+    closeOnce();
+    return true;
+  };
+
+  return child;
+}
+
+test("handoffToCodexThread creates thread with never/danger-full-access and launches workspace + deep link", async () => {
+  const spawnCalls = [];
+  let appServerChild = null;
+  const threadId = "019cbafe-2222-7333-8444-555566667777";
+  const turnId = "019cbafe-2222-7333-8444-555566667778";
+  const promptFilePath = "/tmp/export/codex-import-prompt.md";
+
+  const spawnImpl = (command, args, options) => {
+    spawnCalls.push({ command, args, options });
+    if (command === "codex" && args[0] === "app-server") {
+      appServerChild = createMockAppServerChild({ threadId, turnId });
+      return appServerChild;
+    }
+    if (command === "codex" && args[0] === "app") {
+      return {
+        unref() {},
+        kill() {},
+        killed: false
+      };
+    }
+    if (command === "open") {
+      return {
+        unref() {},
+        kill() {},
+        killed: false
+      };
+    }
+    throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
+  };
+
+  const cwd = "/Users/test/projects/nebula-kit";
+  const result = await handoffToCodexThread({
+    prompt: "ignored because promptFilePath is used",
+    promptFilePath,
+    contextFilePath: "/tmp/export/context-pack.json",
+    cwd,
+    launchCodexApp: true,
+    syncDesktopState: false,
+    timeoutMs: 2000,
+    spawnImpl,
+    platform: "darwin"
+  });
+
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.turnId, turnId);
+  assert.equal(result.launchedCodexApp, true);
+  assert.equal(result.userMessageNotificationSeen, true);
+  assert.equal(result.turnCompletedNotificationSeen, true);
+  assert.equal(result.turnStatus, "completed");
+
+  assert.equal(spawnCalls[0].command, "codex");
+  assert.deepEqual(spawnCalls[0].args, ["app-server", "--listen", "stdio://"]);
+  assert.equal(spawnCalls[0].options.cwd, cwd);
+
+  const threadStartRequest = appServerChild.requests.find((request) => request.method === "thread/start");
+  assert.equal(threadStartRequest.params.cwd, cwd);
+  assert.equal(threadStartRequest.params.approvalPolicy, "never");
+  assert.equal(threadStartRequest.params.sandbox, "danger-full-access");
+
+  assert.equal(
+    appServerChild.requests.some((request) => request.method === "thread/name/set"),
+    false
+  );
+
+  const turnStartRequest = appServerChild.requests.find((request) => request.method === "turn/start");
+  assert.equal(turnStartRequest.params.threadId, threadId);
+  assert.equal(turnStartRequest.params.approvalPolicy, "never");
+  assert.deepEqual(turnStartRequest.params.sandboxPolicy, {
+    type: "dangerFullAccess"
+  });
+  assert.match(turnStartRequest.params.input[0].text, /Claude import package ready for/);
+  assert.doesNotMatch(turnStartRequest.params.input[0].text, /Reference preview/);
+  assert.match(
+    turnStartRequest.params.input[0].text,
+    new RegExp(promptFilePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  );
+
+  assert.deepEqual(spawnCalls[1], {
+    command: "codex",
+    args: ["app", cwd],
+    options: {
+      detached: true,
+      stdio: "ignore"
+    }
+  });
+  assert.deepEqual(spawnCalls[2], {
+    command: "open",
+    args: [`codex://threads/${threadId}`],
+    options: {
+      detached: true,
+      stdio: "ignore"
+    }
+  });
+});
+
+test("handoffToCodexThread still reports launched when deep link open fails", async () => {
+  const spawnCalls = [];
+  const threadId = "019cbafe-3333-7444-8555-666677778888";
+
+  const spawnImpl = (command, args, options) => {
+    spawnCalls.push({ command, args, options });
+    if (command === "codex" && args[0] === "app-server") {
+      return createMockAppServerChild({
+        threadId,
+        emitUserMessageBeforeTurnStartResponse: true
+      });
+    }
+    if (command === "codex" && args[0] === "app") {
+      return {
+        unref() {},
+        kill() {},
+        killed: false
+      };
+    }
+    if (command === "open") {
+      throw new Error("open failed");
+    }
+    throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
+  };
+
+  const cwd = "/Users/test/projects/nebula-kit";
+  const result = await handoffToCodexThread({
+    prompt: "continue here",
+    cwd,
+    launchCodexApp: true,
+    syncDesktopState: false,
+    timeoutMs: 2000,
+    spawnImpl,
+    platform: "darwin"
+  });
+
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.turnStatus, "completed");
+  assert.equal(result.launchedCodexApp, true);
+  assert.deepEqual(spawnCalls[1], {
+    command: "codex",
+    args: ["app", cwd],
+    options: {
+      detached: true,
+      stdio: "ignore"
+    }
+  });
+});
+
+test("handoffToCodexThread still reports launched when workspace open fails but deep link works", async () => {
+  const spawnCalls = [];
+  const threadId = "019cbafe-4444-7444-8555-666677778888";
+
+  const spawnImpl = (command, args, options) => {
+    spawnCalls.push({ command, args, options });
+    if (command === "codex" && args[0] === "app-server") {
+      return createMockAppServerChild({ threadId });
+    }
+    if (command === "codex" && args[0] === "app") {
+      throw new Error("app launch failed");
+    }
+    if (command === "open") {
+      return {
+        unref() {},
+        kill() {},
+        killed: false
+      };
+    }
+    throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
+  };
+
+  const result = await handoffToCodexThread({
+    prompt: "continue here",
+    cwd: "/Users/test/projects/nebula-kit",
+    launchCodexApp: true,
+    syncDesktopState: false,
+    timeoutMs: 2000,
+    spawnImpl,
+    platform: "darwin"
+  });
+
+  assert.equal(result.threadId, threadId);
+  assert.equal(result.launchedCodexApp, true);
+  assert.equal(spawnCalls.some((call) => call.command === "open"), true);
+});
+
+test("handoffToCodexThread updates desktop thread order in CODEX_HOME", async () => {
+  const threadId = "019cbafe-5555-7444-8555-666677778888";
+  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "handoff-codex-home-"));
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = tmpRoot;
+
+  try {
+    await fs.writeFile(
+      path.join(tmpRoot, ".codex-global-state.json"),
+      JSON.stringify({
+        "thread-titles": {
+          titles: {
+            old: "Old"
+          },
+          order: ["old"]
+        }
+      }),
+      "utf8"
+    );
+
+    const spawnImpl = (command, args) => {
+      if (command === "codex" && args[0] === "app-server") {
+        return createMockAppServerChild({ threadId });
+      }
+      throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
+    };
+
+    const result = await handoffToCodexThread({
+      prompt: "continue here",
+      cwd: "/Users/test/projects/nebula-kit",
+      launchCodexApp: false,
+      timeoutMs: 2000,
+      spawnImpl,
+      platform: "darwin"
+    });
+
+    assert.equal(result.threadId, threadId);
+    const saved = JSON.parse(await fs.readFile(path.join(tmpRoot, ".codex-global-state.json"), "utf8"));
+    assert.equal(saved["thread-titles"].order[0], threadId);
+    assert.equal(saved["thread-titles"].titles[threadId], "nebula-kit");
+  } finally {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  }
+});

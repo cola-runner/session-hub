@@ -33,7 +33,7 @@ applyTheme(getStoredTheme() || "light");
 
 const URL_PARAMS = new URLSearchParams(window.location.search);
 const IS_TRANSFER_MODE = URL_PARAMS.get("mode") === "transfer";
-const INITIAL_VIEW = URL_PARAMS.get("view") || (IS_TRANSFER_MODE ? "claude" : "codex");
+const INITIAL_VIEW = URL_PARAMS.get("view") || "claude";
 
 const state = {
   config: null,
@@ -103,6 +103,7 @@ const dom = {
   claudeActionDelete: document.getElementById("claude-action-delete"),
   claudeActionExport: document.getElementById("claude-action-export"),
   claudeActionTransferActive: document.getElementById("claude-action-transfer-active"),
+  claudeTransferHint: document.getElementById("claude-transfer-hint"),
   claudeExportResult: document.getElementById("claude-export-result"),
   claudeExportPath: document.getElementById("claude-export-path"),
   claudeTransferStatus: document.getElementById("claude-transfer-status"),
@@ -150,16 +151,14 @@ function configureTransferModeUI() {
     return;
   }
 
-  dom.tabCodex.classList.add("hidden");
-  dom.tabGemini.classList.add("hidden");
-  dom.tabTrash.classList.add("hidden");
-  dom.cleanupExpired.classList.add("hidden");
-
   dom.claudeActionArchive.classList.add("hidden");
   dom.claudeActionUnarchive.classList.add("hidden");
   dom.claudeActionDelete.classList.add("hidden");
   dom.claudeActionExport.classList.add("hidden");
   dom.claudeActionTransferActive.classList.remove("hidden");
+  dom.claudeTransferHint.classList.remove("hidden");
+  dom.claudeSelectFiltered.textContent = "Select Active Projects";
+  dom.claudeClearSelection.textContent = "Clear Project Selection";
 
   state.stateFilter.claude = "active";
   setActiveStateFilter("claude", "active");
@@ -363,6 +362,104 @@ function activeClaudeSessions() {
   return claudeSessions().filter((session) => session.state === "active");
 }
 
+function claudeProjectKey(session) {
+  const relativePath = typeof session.relativePath === "string"
+    ? session.relativePath
+    : "";
+  const parts = relativePath.split("/");
+  if (parts.length >= 2 && (parts[0] === "projects" || parts[0] === "archived_sessions")) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  if (session.projectName) {
+    return `name:${session.projectName}`;
+  }
+  return `thread:${session.threadId || "unknown"}`;
+}
+
+function selectedActiveClaudeProjectKeys() {
+  const selectedProjectKeys = new Set();
+  for (const session of claudeSessions()) {
+    if (!state.selected.claude.has(session.itemId)) {
+      continue;
+    }
+    if (session.state !== "active") {
+      continue;
+    }
+    selectedProjectKeys.add(claudeProjectKey(session));
+  }
+  return selectedProjectKeys;
+}
+
+function activeClaudeSessionsForSelectedProjects() {
+  const selectedProjectKeys = selectedActiveClaudeProjectKeys();
+  if (selectedProjectKeys.size === 0) {
+    return [];
+  }
+  return activeClaudeSessions().filter((session) => selectedProjectKeys.has(claudeProjectKey(session)));
+}
+
+function filteredClaudeProjectRows() {
+  const grouped = new Map();
+  for (const session of filteredClaude()) {
+    if (session.state !== "active") {
+      continue;
+    }
+    const projectKey = claudeProjectKey(session);
+    if (!grouped.has(projectKey)) {
+      grouped.set(projectKey, {
+        projectKey,
+        projectName: session.projectName || "(unknown-project)",
+        itemIds: [],
+        sizeBytes: 0,
+        latestUpdatedAt: session.updatedAt,
+        latestUpdatedAtMs: Date.parse(session.updatedAt) || 0,
+        latestTitle: session.title || "Untitled session"
+      });
+    }
+
+    const row = grouped.get(projectKey);
+    row.itemIds.push(session.itemId);
+    row.sizeBytes += Number(session.sizeBytes) || 0;
+
+    const updatedAtMs = Date.parse(session.updatedAt) || 0;
+    if (updatedAtMs >= row.latestUpdatedAtMs) {
+      row.latestUpdatedAtMs = updatedAtMs;
+      row.latestUpdatedAt = session.updatedAt;
+      row.latestTitle = session.title || row.latestTitle;
+    }
+  }
+
+  return Array.from(grouped.values())
+    .sort((left, right) => right.latestUpdatedAtMs - left.latestUpdatedAtMs)
+    .map((row) => {
+      return {
+        projectKey: row.projectKey,
+        projectName: row.projectName,
+        itemIds: row.itemIds,
+        sessionCount: row.itemIds.length,
+        sizeBytes: row.sizeBytes,
+        latestUpdatedAt: row.latestUpdatedAt,
+        latestTitle: row.latestTitle
+      };
+    });
+}
+
+function applyClaudeProjectSelection(projectRows, shouldSelect) {
+  for (const project of projectRows) {
+    for (const itemId of project.itemIds) {
+      if (shouldSelect) {
+        state.selected.claude.add(itemId);
+      } else {
+        state.selected.claude.delete(itemId);
+      }
+    }
+  }
+}
+
+function setFilteredClaudeProjectSelection(shouldSelect) {
+  applyClaudeProjectSelection(filteredClaudeProjectRows(), shouldSelect);
+}
+
 function filteredCodex() {
   const query = state.queries.codex.trim().toLowerCase();
   const stateF = state.stateFilter.codex;
@@ -526,23 +623,63 @@ function renderCodex() {
 /* ── render: Claude ───────────────────────────────────── */
 
 function renderClaude() {
+  if (IS_TRANSFER_MODE) {
+    const projectRows = filteredClaudeProjectRows();
+    const projectByKey = new Map(projectRows.map((project) => [project.projectKey, project]));
+    const selectedSet = state.selected.claude;
+
+    dom.claudeBody.innerHTML = "";
+    for (const project of projectRows) {
+      const projectName = project.projectName || "(unknown-project)";
+      const displayProject = truncateText(projectName, 62);
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+      <td><input type="checkbox" data-project-key="${escapeHtml(project.projectKey)}" /></td>
+      <td class="title-cell" title="${escapeHtml(projectName)}">${escapeHtml(displayProject)}</td>
+      <td>${project.sessionCount}</td>
+      <td>${formatDate(project.latestUpdatedAt)}</td>
+      <td>${formatBytes(project.sizeBytes)}</td>
+    `;
+      dom.claudeBody.appendChild(row);
+    }
+
+    dom.claudeBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+      const projectKey = checkbox.getAttribute("data-project-key");
+      const project = projectByKey.get(projectKey);
+      if (!project) {
+        return;
+      }
+      const selectedCount = project.itemIds.filter((itemId) => selectedSet.has(itemId)).length;
+      checkbox.checked = selectedCount === project.itemIds.length && project.itemIds.length > 0;
+      checkbox.indeterminate = selectedCount > 0 && selectedCount < project.itemIds.length;
+      checkbox.addEventListener("change", () => {
+        applyClaudeProjectSelection([project], checkbox.checked);
+        renderClaude();
+      });
+    });
+
+    const selectedProjects = projectRows.filter((project) =>
+      project.itemIds.every((itemId) => selectedSet.has(itemId))
+    ).length;
+    dom.claudeCheckAll.checked = projectRows.length > 0 && selectedProjects === projectRows.length;
+    renderSelectionMeta();
+    return;
+  }
+
   const rows = filteredClaude();
   const selectedSet = state.selected.claude;
 
   dom.claudeBody.innerHTML = "";
   for (const session of rows) {
-    const title = session.title || "Untitled session";
-    const displayTitle = truncateText(title, 62);
     const project = session.projectName || "-";
-    const branch = session.gitBranch || "-";
+    const displayProject = truncateText(project, 62);
 
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
-      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
-      <td>${statePill(session.state)}</td>
-      <td title="${escapeHtml(project)}">${escapeHtml(truncateText(project, 30))}</td>
-      <td>${escapeHtml(truncateText(branch, 20))}</td>
+      <td class="title-cell" title="${escapeHtml(project)}">${escapeHtml(displayProject)}</td>
+      <td>${session.messageCount || 0}</td>
       <td>${formatDate(session.updatedAt)}</td>
       <td>${formatBytes(session.sizeBytes)}</td>
     `;
@@ -558,7 +695,7 @@ function renderClaude() {
       } else {
         selectedSet.delete(id);
       }
-      renderSelectionMeta();
+      renderClaude();
     });
   });
 
@@ -659,9 +796,13 @@ function renderSelectionMeta() {
   const codexTotal = codexSessions().length;
   const claudeTotal = claudeSessions().length;
   const geminiTotal = geminiSessions().length;
+  const selectedClaudeProjects = selectedActiveClaudeProjectKeys().size;
+  const totalActiveClaudeProjects = new Set(activeClaudeSessions().map((session) => claudeProjectKey(session))).size;
 
   dom.codexSelectionMeta.textContent = `${state.selected.codex.size} selected / ${codexTotal} total`;
-  dom.claudeSelectionMeta.textContent = `${state.selected.claude.size} selected / ${claudeTotal} total`;
+  dom.claudeSelectionMeta.textContent = IS_TRANSFER_MODE
+    ? `${state.selected.claude.size} sessions selected / ${claudeTotal} total | ${selectedClaudeProjects}/${totalActiveClaudeProjects} projects queued`
+    : `${state.selected.claude.size} selected / ${claudeTotal} total`;
   dom.geminiSelectionMeta.textContent = `${state.selected.gemini.size} selected / ${geminiTotal} total`;
   dom.trashSelectionMeta.textContent = `${state.selected.trash.size} selected / ${state.trash.length} total`;
 
@@ -681,10 +822,13 @@ function renderSelectionMeta() {
   dom.claudeActionArchive.disabled = !hasClaudeActiveSelected;
   dom.claudeActionUnarchive.disabled = !hasClaudeArchivedSelected;
   dom.claudeActionDelete.disabled = state.selected.claude.size === 0;
-  dom.claudeActionExport.disabled = IS_TRANSFER_MODE
-    ? filteredClaude().length === 0
-    : state.selected.claude.size === 0;
-  dom.claudeActionTransferActive.disabled = activeClaudeSessions().length === 0;
+  dom.claudeActionExport.disabled = state.selected.claude.size === 0;
+  dom.claudeActionTransferActive.disabled = selectedClaudeProjects === 0;
+  if (IS_TRANSFER_MODE) {
+    dom.claudeActionTransferActive.textContent = selectedClaudeProjects > 0
+      ? `Transfer ${selectedClaudeProjects} Selected Project${selectedClaudeProjects > 1 ? "s" : ""} To Codex`
+      : "Transfer Selected Projects To Codex";
+  }
 
   const geminiSelectedItems = geminiSessions().filter((s) => state.selected.gemini.has(s.itemId));
   const hasGeminiActiveSelected = geminiSelectedItems.some((s) => s.state === "active");
@@ -766,6 +910,16 @@ async function loadTrash() {
 }
 
 function renderClaudeExportResult() {
+  if (IS_TRANSFER_MODE) {
+    dom.claudeExportResult.classList.add("hidden");
+    dom.claudeExportPath.textContent = "";
+    dom.claudeTransferStatus.textContent = "";
+    dom.claudeTransferStatus.classList.add("hidden");
+    dom.claudeCopyPrompt.textContent = "Copy Import Prompt";
+    dom.claudeCopyPrompt.disabled = true;
+    return;
+  }
+
   if (!state.claudeExportResult) {
     dom.claudeExportResult.classList.add("hidden");
     dom.claudeExportPath.textContent = "";
@@ -845,10 +999,6 @@ function bootstrapTransferSelectionIfNeeded() {
 
   state.stateFilter.claude = "active";
   setActiveStateFilter("claude", "active");
-  const activeClaudeRows = filteredClaude();
-  if (activeClaudeRows.length > 0 && state.selected.claude.size === 0) {
-    applySelection(state.selected.claude, activeClaudeRows, "itemId", true);
-  }
   state.transferSelectionBootstrapped = true;
 }
 
@@ -1035,14 +1185,35 @@ async function runClaudeExport() {
 }
 
 async function runClaudeTransferActive() {
-  const itemIds = activeClaudeSessions().map((session) => session.itemId);
-  if (itemIds.length === 0) {
-    showFeedback("No active Claude sessions found.", "error");
+  state.claudeExportResult = null;
+  state.claudeExportPrompt = "";
+  renderClaudeExportResult();
+
+  const sessionsToTransfer = activeClaudeSessionsForSelectedProjects();
+  if (sessionsToTransfer.length === 0) {
+    showFeedback("Select at least one active Claude project first.", "error");
     return;
   }
+
+  const grouped = new Map();
+  for (const session of sessionsToTransfer) {
+    const key = claudeProjectKey(session);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        projectName: session.projectName || "(unknown-project)",
+        itemIds: []
+      });
+    }
+    grouped.get(key).itemIds.push(session.itemId);
+  }
+
+  const groups = Array.from(grouped.values());
+  const projectCount = groups.length;
+  const sessionCount = sessionsToTransfer.length;
+
   const confirmationTitle = "Transfer Claude Code active sessions to Codex?";
   const confirmationMessage =
-    `Transfer ${itemIds.length} active Claude session(s) now?\n\n` +
+    `Transfer ${sessionCount} active Claude session(s) from ${projectCount} selected project(s) now?\n\n` +
     "Session Hub will create 1 new Codex session per Claude project (not one giant merged session).";
 
   const accepted = await requestConfirmation({
@@ -1057,23 +1228,9 @@ async function runClaudeTransferActive() {
     return;
   }
 
-  const grouped = new Map();
-  for (const session of activeClaudeSessions()) {
-    const projectName = session.projectName || "(unknown-project)";
-    if (!grouped.has(projectName)) {
-      grouped.set(projectName, []);
-    }
-    grouped.get(projectName).push(session.itemId);
-  }
-
-  const groups = Array.from(grouped.entries()).map(([projectName, groupItemIds]) => ({
-    projectName,
-    itemIds: groupItemIds
-  }));
-
   const batch = {
     projectCount: groups.length,
-    sessionCount: itemIds.length,
+    sessionCount: sessionsToTransfer.length,
     exportedProjects: 0,
     failedProjects: 0,
     handoffSuccessCount: 0,
@@ -1112,24 +1269,6 @@ async function runClaudeTransferActive() {
       batch.errors.push(`${group.projectName}: ${toError(error)}`);
     }
   }
-
-  state.claudeExportResult = {
-    exportDir: "~/.session-hub/exports/<export-id>",
-    stats: {
-      sessionCount: batch.sessionCount,
-      eventCount: batch.eventCount
-    },
-    batch,
-    codexHandoff: {
-      ok: batch.handoffFailureCount === 0 && batch.failedProjects === 0,
-      threadId: batch.handoffSuccessCount > 0
-        ? `${batch.handoffSuccessCount} threads`
-        : null,
-      error: batch.errors[0] || null
-    }
-  };
-  state.claudeExportPrompt = "";
-  renderClaudeExportResult();
 
   if (batch.failedProjects === 0 && batch.handoffFailureCount === 0) {
     const cliHint = batch.launchedCodexAppCount === 0
@@ -1343,7 +1482,11 @@ function wireEvents() {
     renderClaude();
   });
   dom.claudeSelectFiltered.addEventListener("click", () => {
-    applySelection(state.selected.claude, filteredClaude(), "itemId", true);
+    if (IS_TRANSFER_MODE) {
+      setFilteredClaudeProjectSelection(true);
+    } else {
+      applySelection(state.selected.claude, filteredClaude(), "itemId", true);
+    }
     renderClaude();
   });
   dom.claudeClearSelection.addEventListener("click", () => {
@@ -1351,7 +1494,11 @@ function wireEvents() {
     renderClaude();
   });
   dom.claudeCheckAll.addEventListener("change", (event) => {
-    applySelection(state.selected.claude, filteredClaude(), "itemId", event.target.checked);
+    if (IS_TRANSFER_MODE) {
+      setFilteredClaudeProjectSelection(event.target.checked);
+    } else {
+      applySelection(state.selected.claude, filteredClaude(), "itemId", event.target.checked);
+    }
     renderClaude();
   });
   dom.claudeActionArchive.addEventListener("click", () => {

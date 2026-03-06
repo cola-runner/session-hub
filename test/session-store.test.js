@@ -98,7 +98,7 @@ test("listSessions derives title from first user message", async () => {
   await fs.rm(codexHome, { recursive: true, force: true });
 });
 
-test("desktop global state title is preferred when available", async () => {
+test("rollout first user message takes priority over desktop global title", async () => {
   const codexHome = await createTempDir();
   const store = new SessionStore({ codexHome });
 
@@ -124,7 +124,7 @@ test("desktop global state title is preferred when available", async () => {
   });
 
   const listed = await store.listSessions();
-  assert.equal(listed.items[0].title, "Create batch session cleanup tool");
+  assert.equal(listed.items[0].title, "raw first message title");
   assert.equal(listed.items[0].hasUserMessage, true);
   assert.equal(listed.items[0].isSystemMessage, false);
 

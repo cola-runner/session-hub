@@ -88,6 +88,24 @@ test("listSessions discovers sessions across project directories", async () => {
   await fs.rm(claudeHome, { recursive: true, force: true });
 });
 
+test("listSessions prefers cwd project path to avoid splitting hyphenated names", async () => {
+  const claudeHome = await createTempDir();
+  const projectDir = path.join(claudeHome, "projects", "-Users-test-web-tiny-game");
+
+  await writeClaudeSession(projectDir, "sess-cwd", [
+    userLine("sess-cwd", "Hello", { cwd: "/Users/test/web-tiny-game", gitBranch: "main" }),
+    assistantLine("sess-cwd")
+  ]);
+
+  const store = new ClaudeSessionStore({ claudeHome });
+  const result = await store.listSessions();
+
+  assert.equal(result.counts.total, 1);
+  assert.equal(result.items[0].projectName, "/Users/test/web-tiny-game");
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+});
+
 test("listSessions returns empty when no projects directory", async () => {
   const claudeHome = await createTempDir();
   const store = new ClaudeSessionStore({ claudeHome });

@@ -50,7 +50,7 @@ async function readFirstUserMessage(absolutePath) {
   try {
     input = fsSync.createReadStream(absolutePath, { encoding: "utf8" });
   } catch {
-    return { title: null, gitBranch: null, messageCount: 0 };
+    return { title: null, gitBranch: null, messageCount: 0, projectPath: null };
   }
 
   const lineReader = readline.createInterface({
@@ -62,6 +62,7 @@ async function readFirstUserMessage(absolutePath) {
   let firstUserContent = null;
   let gitBranch = null;
   let messageCount = 0;
+  let projectPath = null;
 
   try {
     for await (const line of lineReader) {
@@ -75,6 +76,15 @@ async function readFirstUserMessage(absolutePath) {
         record = JSON.parse(line);
       } catch {
         continue;
+      }
+
+      if (
+        !projectPath &&
+        record &&
+        typeof record.cwd === "string" &&
+        path.isAbsolute(record.cwd.trim())
+      ) {
+        projectPath = record.cwd.trim();
       }
 
       if (record.type === "user") {
@@ -96,7 +106,7 @@ async function readFirstUserMessage(absolutePath) {
   }
 
   const title = normalizeTitle(firstUserContent);
-  return { title, gitBranch, messageCount };
+  return { title, gitBranch, messageCount, projectPath };
 }
 
 class ClaudeSessionStore {
@@ -189,7 +199,7 @@ class ClaudeSessionStore {
 
     for (const projectDir of projectDirs) {
       const projectPath = path.join(rootPath, projectDir.name);
-      const projectName = decodeProjectName(projectDir.name);
+      const fallbackProjectName = decodeProjectName(projectDir.name);
 
       let files;
       try {
@@ -197,6 +207,9 @@ class ClaudeSessionStore {
       } catch {
         continue;
       }
+
+      const pendingItems = [];
+      let canonicalProjectName = null;
 
       for (const file of files) {
         if (!file.isFile() || !file.name.endsWith(".jsonl")) {
@@ -217,11 +230,14 @@ class ClaudeSessionStore {
         }
 
         const meta = await this.#resolveItemMeta(absolutePath, stats.mtimeMs, stats.size, sessionId);
+        if (!canonicalProjectName && meta.projectPath) {
+          canonicalProjectName = meta.projectPath;
+        }
 
         const itemId = encodeClaudeItemId(sessionId);
         const relativePath = path.relative(this.claudeHome, absolutePath).split(path.sep).join("/");
 
-        items.push({
+        pendingItems.push({
           itemId,
           threadId: sessionId,
           title: meta.title || `Untitled ${sessionId.slice(0, 8)}`,
@@ -234,9 +250,17 @@ class ClaudeSessionStore {
           createdAt: new Date(stats.birthtimeMs || stats.ctimeMs || stats.mtimeMs || Date.now()).toISOString(),
           updatedAt: new Date(stats.mtimeMs || stats.ctimeMs || Date.now()).toISOString(),
           updatedAtEpochMs: stats.mtimeMs || stats.ctimeMs || Date.now(),
-          projectName,
+          projectName: meta.projectPath || null,
           gitBranch: meta.gitBranch || null,
           messageCount: meta.messageCount || 0
+        });
+      }
+
+      const resolvedProjectName = canonicalProjectName || fallbackProjectName;
+      for (const item of pendingItems) {
+        items.push({
+          ...item,
+          projectName: item.projectName || resolvedProjectName
         });
       }
     }
@@ -268,11 +292,12 @@ class ClaudeSessionStore {
       return {
         title: cached.title,
         gitBranch: cached.gitBranch,
-        messageCount: cached.messageCount
+        messageCount: cached.messageCount,
+        projectPath: cached.projectPath
       };
     }
 
-    let signals = { title: null, gitBranch: null, messageCount: 0 };
+    let signals = { title: null, gitBranch: null, messageCount: 0, projectPath: null };
     try {
       signals = await readFirstUserMessage(absolutePath);
     } catch (error) {
@@ -286,13 +311,15 @@ class ClaudeSessionStore {
       sizeBytes,
       title: signals.title,
       gitBranch: signals.gitBranch,
-      messageCount: signals.messageCount
+      messageCount: signals.messageCount,
+      projectPath: signals.projectPath
     });
 
     return {
       title: signals.title,
       gitBranch: signals.gitBranch,
-      messageCount: signals.messageCount
+      messageCount: signals.messageCount,
+      projectPath: signals.projectPath
     };
   }
 }

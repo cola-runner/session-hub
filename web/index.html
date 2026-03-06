@@ -38,11 +38,11 @@
       <section id="feedback" class="feedback" aria-live="polite"></section>
 
       <nav class="tabs" role="tablist">
-        <button id="tab-codex" class="tab active" role="tab" aria-selected="true">
-          Codex
-        </button>
-        <button id="tab-claude" class="tab" role="tab" aria-selected="false">
+        <button id="tab-claude" class="tab active" role="tab" aria-selected="true">
           Claude
+        </button>
+        <button id="tab-codex" class="tab" role="tab" aria-selected="false">
+          Codex
         </button>
         <button id="tab-gemini" class="tab" role="tab" aria-selected="false">
           Gemini
@@ -50,7 +50,7 @@
         <button id="tab-trash" class="tab" role="tab" aria-selected="false">Trash</button>
       </nav>
 
-      <section id="view-codex" class="card view">
+      <section id="view-codex" class="card view hidden">
         <div class="controls">
           <input id="codex-query" type="search" placeholder="Search Codex sessions" />
           <div class="state-filter">
@@ -87,7 +87,7 @@
         </div>
       </section>
 
-      <section id="view-claude" class="card view hidden">
+      <section id="view-claude" class="card view">
         <div class="controls">
           <input id="claude-query" type="search" placeholder="Search Claude sessions" />
           <div class="state-filter">
@@ -98,13 +98,16 @@
           <button id="claude-select-filtered" class="btn ghost">Select Filtered</button>
           <button id="claude-clear-selection" class="btn ghost">Clear Selection</button>
         </div>
+        <p id="claude-transfer-hint" class="muted hidden">
+          Transfer mode: rows are grouped by project. Selecting one row migrates all active sessions in that project.
+        </p>
 
         <div class="batch-actions">
           <button id="claude-action-archive" class="btn primary">Archive</button>
           <button id="claude-action-unarchive" class="btn primary">Unarchive</button>
           <button id="claude-action-delete" class="btn danger">Move To Trash</button>
           <button id="claude-action-export" class="btn primary">Export</button>
-          <button id="claude-action-transfer-active" class="btn primary hidden">Transfer Claude Code Active To Codex</button>
+          <button id="claude-action-transfer-active" class="btn primary hidden">Transfer Selected Projects To Codex</button>
           <span id="claude-selection-meta" class="muted"></span>
         </div>
 
@@ -121,10 +124,8 @@
             <thead>
               <tr>
                 <th><input id="claude-check-all" type="checkbox" /></th>
-                <th>Title</th>
-                <th>State</th>
                 <th>Project</th>
-                <th>Branch</th>
+                <th>Count</th>
                 <th>Updated</th>
                 <th>Size</th>
               </tr>

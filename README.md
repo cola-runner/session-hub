@@ -94,10 +94,12 @@ Use the tabs in the UI:
 
 ### 4) Transfer Claude sessions to Codex (recommended)
 
-In transfer mode, click **Transfer Claude Code Active To Codex**:
-1. Confirm ownership.
-2. Session Hub exports locally and creates **one new Codex session per Claude project**.
-3. Codex app opens so you can continue right away.
+In transfer mode:
+1. Filter to **Active** and select projects to migrate (checking one session selects that whole project).
+2. Click **Transfer Selected Projects To Codex**.
+3. Confirm ownership.
+4. Session Hub exports locally and creates **one new Codex session per selected Claude project**.
+5. Codex app opens so you can continue right away.
 
 If Codex app does not open (or you use CLI only), continue from terminal:
 - `codex resume --all`
