@@ -154,3 +154,44 @@ test("POST /api/claude/export returns exported package", async () => {
     await fs.rm(trashRoot, { recursive: true, force: true });
   }
 });
+
+test("GET /api/codex/status returns detector payload", async () => {
+  const codexHome = await createTempDir("session-hub-server-codex-status-");
+  const claudeHome = await createTempDir("session-hub-server-claude-status-");
+  const geminiHome = await createTempDir("session-hub-server-gemini-status-");
+  const trashRoot = await createTempDir("session-hub-server-trash-status-");
+  const running = await startServer({
+    codexHome,
+    claudeHome,
+    geminiHome,
+    trashRoot,
+    port: 0,
+    codexStatusProvider: async () => ({
+      checkedAt: "2026-03-07T00:00:00.000Z",
+      platform: "darwin",
+      running: true,
+      fingerprint: "42",
+      processes: [{
+        pid: 42,
+        command: "/Applications/Codex.app/Contents/MacOS/Codex",
+        args: "/Applications/Codex.app/Contents/MacOS/Codex"
+      }]
+    })
+  });
+
+  try {
+    const response = await fetch(`${running.url}/api/codex/status`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.running, true);
+    assert.equal(payload.fingerprint, "42");
+    assert.equal(payload.processes.length, 1);
+  } finally {
+    await closeServer(running.server);
+    await fs.rm(codexHome, { recursive: true, force: true });
+    await fs.rm(claudeHome, { recursive: true, force: true });
+    await fs.rm(geminiHome, { recursive: true, force: true });
+    await fs.rm(trashRoot, { recursive: true, force: true });
+  }
+});

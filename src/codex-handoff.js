@@ -11,6 +11,58 @@ const DESKTOP_STATE_RETRY_ATTEMPTS = 5;
 const DESKTOP_STATE_RETRY_DELAY_MS = 150;
 const APP_RESTART_SETTLE_DELAY_MS = 1200;
 
+async function fileExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveCodexCommand({
+  platform = process.platform,
+  fileExistsImpl = fileExists
+} = {}) {
+  const explicitCandidates = [
+    process.env.CODEX_BIN,
+    process.env.CODEX_CLI_PATH
+  ].filter((value) => typeof value === "string" && value.trim());
+
+  for (const candidate of explicitCandidates) {
+    const normalized = String(candidate).trim();
+    if (await fileExistsImpl(normalized)) {
+      return normalized;
+    }
+  }
+
+  if (platform === "darwin") {
+    const macCandidates = [
+      "/Applications/Codex.app/Contents/Resources/codex",
+      path.join(os.homedir(), "Applications", "Codex.app", "Contents", "Resources", "codex")
+    ];
+
+    for (const candidate of macCandidates) {
+      if (await fileExistsImpl(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return "codex";
+}
+
+function toSpawnError(error, codexCommand) {
+  if (error && error.code === "ENOENT") {
+    const target = typeof codexCommand === "string" && codexCommand ? codexCommand : "codex";
+    return new Error(
+      `Codex CLI was not found for Session Hub handoff (tried ${target}). ` +
+      "Restart Session Hub from a terminal where `codex` works, or set CODEX_BIN to the full Codex CLI path."
+    );
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 function trySpawnDetached({ spawnImpl = spawn, command, args = [] } = {}) {
   try {
     const child = spawnImpl(command, args, {
@@ -46,9 +98,19 @@ function tryOpenCodexThread({ spawnImpl = spawn, threadId, platform = process.pl
   return trySpawnDetached({ spawnImpl, command: "xdg-open", args: [deepLink] });
 }
 
-function tryLaunchCodexApp({ spawnImpl = spawn, cwd, threadId, platform = process.platform } = {}) {
+function tryLaunchCodexApp({
+  spawnImpl = spawn,
+  codexCommand = "codex",
+  cwd,
+  threadId,
+  platform = process.platform
+} = {}) {
   const launchPath = cwd ? String(cwd) : ".";
-  const launchedWorkspace = trySpawnDetached({ spawnImpl, command: "codex", args: ["app", launchPath] });
+  const launchedWorkspace = trySpawnDetached({
+    spawnImpl,
+    command: codexCommand,
+    args: ["app", launchPath]
+  });
   const openedThread = tryOpenCodexThread({ spawnImpl, threadId, platform });
   return launchedWorkspace || openedThread;
 }
@@ -338,12 +400,13 @@ async function updateDesktopThreadOrder({ threadId, cwd, threadName } = {}) {
 
 function createAppServerRpcClient({
   spawnImpl = spawn,
+  codexCommand = "codex",
   cwd,
   message,
   threadName,
   timeoutMs = 60000
 } = {}) {
-  const child = spawnImpl("codex", ["app-server", "--listen", "stdio://"], {
+  const child = spawnImpl(codexCommand, ["app-server", "--listen", "stdio://"], {
     cwd,
     stdio: ["pipe", "pipe", "pipe"]
   });
@@ -626,7 +689,7 @@ function createAppServerRpcClient({
     });
 
     child.once("error", (error) => {
-      fail(error);
+      fail(toSpawnError(error, codexCommand));
     });
 
     child.once("close", (code) => {
@@ -711,6 +774,12 @@ async function handoffToCodexThread(options) {
   const inlineChars = Number.isFinite(options.inlineChars)
     ? Number(options.inlineChars)
     : Array.from(prompt).length;
+  const codexCommand = options.codexCommand
+    ? String(options.codexCommand)
+    : await resolveCodexCommand({
+      platform,
+      fileExistsImpl: options.fileExistsImpl
+    });
   const message = buildHandoffMessage({
     prompt,
     cwd,
@@ -723,6 +792,7 @@ async function handoffToCodexThread(options) {
 
   const rpcResult = await createAppServerRpcClient({
     spawnImpl,
+    codexCommand,
     cwd,
     message,
     threadName,
@@ -742,7 +812,13 @@ async function handoffToCodexThread(options) {
   }
 
   const launchedCodexApp = launchCodexApp
-    ? tryLaunchCodexApp({ spawnImpl, cwd, threadId: rpcResult.threadId, platform })
+    ? tryLaunchCodexApp({
+      spawnImpl,
+      codexCommand,
+      cwd,
+      threadId: rpcResult.threadId,
+      platform
+    })
     : false;
 
   return {
@@ -761,5 +837,6 @@ async function handoffToCodexThread(options) {
 }
 
 module.exports = {
-  handoffToCodexThread
+  handoffToCodexThread,
+  resolveCodexCommand
 };

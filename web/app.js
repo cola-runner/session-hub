@@ -63,7 +63,18 @@ const state = {
   confirmCheckboxRequired: false,
   claudeExportPrompt: "",
   claudeExportResult: null,
-  transferSelectionBootstrapped: false
+  transferSelectionBootstrapped: false,
+  transfer: {
+    phase: IS_TRANSFER_MODE ? "select" : "idle",
+    progressCurrent: 0,
+    progressTotal: 0,
+    currentProjectName: "",
+    batch: null,
+    baselineCodexStatus: null,
+    currentCodexStatus: null,
+    statusError: "",
+    pollHandle: null
+  }
 };
 
 const dom = {
@@ -115,6 +126,27 @@ const dom = {
   claudeTransferStatus: document.getElementById("claude-transfer-status"),
   claudeCopyPrompt: document.getElementById("claude-copy-prompt"),
 
+  transferModal: document.getElementById("transfer-modal"),
+  transferBackdrop: document.getElementById("transfer-backdrop"),
+  transferTitle: document.getElementById("transfer-title"),
+  transferSubtitle: document.getElementById("transfer-subtitle"),
+  transferSelectionSummary: document.getElementById("transfer-selection-summary"),
+  transferControls: document.getElementById("transfer-controls"),
+  transferQuery: document.getElementById("transfer-query"),
+  transferSelectFiltered: document.getElementById("transfer-select-filtered"),
+  transferClearSelection: document.getElementById("transfer-clear-selection"),
+  transferCheckAll: document.getElementById("transfer-check-all"),
+  transferTableWrap: document.getElementById("transfer-table-wrap"),
+  transferBody: document.getElementById("transfer-body"),
+  transferStatusCard: document.getElementById("transfer-status-card"),
+  transferStatusKicker: document.getElementById("transfer-status-kicker"),
+  transferStatusTitle: document.getElementById("transfer-status-title"),
+  transferStatusMessage: document.getElementById("transfer-status-message"),
+  transferStatusDetail: document.getElementById("transfer-status-detail"),
+  transferStatusExtra: document.getElementById("transfer-status-extra"),
+  transferSecondaryAction: document.getElementById("transfer-secondary-action"),
+  transferPrimaryAction: document.getElementById("transfer-primary-action"),
+
   geminiQuery: document.getElementById("gemini-query"),
   geminiSelectFiltered: document.getElementById("gemini-select-filtered"),
   geminiClearSelection: document.getElementById("gemini-clear-selection"),
@@ -157,6 +189,7 @@ function configureTransferModeUI() {
     return;
   }
 
+  document.body.classList.add("transfer-mode");
   dom.claudeActionArchive.classList.add("hidden");
   dom.claudeActionUnarchive.classList.add("hidden");
   dom.claudeActionDelete.classList.add("hidden");
@@ -297,6 +330,17 @@ async function copyTextToClipboard(text) {
   await navigator.clipboard.writeText(text);
 }
 
+function isModalVisible(element) {
+  return Boolean(element) && !element.classList.contains("hidden");
+}
+
+function syncBodyModalState() {
+  document.body.classList.toggle(
+    "modal-open",
+    isModalVisible(dom.confirmModal) || (IS_TRANSFER_MODE && isModalVisible(dom.transferModal))
+  );
+}
+
 /* ── confirm modal ────────────────────────────────────── */
 
 function closeConfirmModal(accepted) {
@@ -308,7 +352,7 @@ function closeConfirmModal(accepted) {
   state.confirmResolve = null;
   dom.confirmModal.classList.add("hidden");
   dom.confirmModal.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("modal-open");
+  syncBodyModalState();
 
   if (
     state.lastFocusedElement &&
@@ -359,7 +403,7 @@ function requestConfirmation({
 
   dom.confirmModal.classList.remove("hidden");
   dom.confirmModal.setAttribute("aria-hidden", "false");
-  document.body.classList.add("modal-open");
+  syncBodyModalState();
   state.lastFocusedElement = document.activeElement;
 
   return new Promise((resolve) => {
@@ -549,6 +593,320 @@ function filteredTrash() {
       } ${item.provider || ""}`.toLowerCase();
     return text.includes(query);
   });
+}
+
+function activeClaudeProjectCount() {
+  return new Set(activeClaudeSessions().map((session) => claudeProjectKey(session))).size;
+}
+
+function selectedActiveClaudeSessionCount() {
+  return activeClaudeSessionsForSelectedProjects().length;
+}
+
+function selectedActiveClaudeProjectCount() {
+  return selectedActiveClaudeProjectKeys().size;
+}
+
+function resetTransferFlow(options = {}) {
+  const clearSelection = options.clearSelection === true;
+  stopTransferCodexPolling();
+  state.transfer.phase = "select";
+  state.transfer.progressCurrent = 0;
+  state.transfer.progressTotal = 0;
+  state.transfer.currentProjectName = "";
+  state.transfer.batch = null;
+  state.transfer.baselineCodexStatus = null;
+  state.transfer.currentCodexStatus = null;
+  state.transfer.statusError = "";
+  if (clearSelection) {
+    state.selected.claude.clear();
+  }
+}
+
+function stopTransferCodexPolling() {
+  if (state.transfer.pollHandle) {
+    window.clearTimeout(state.transfer.pollHandle);
+    state.transfer.pollHandle = null;
+  }
+}
+
+async function requestCodexStatus() {
+  return requestJson("/api/codex/status");
+}
+
+function codexStatusSummary(status) {
+  if (!status) {
+    return "Checking Codex app status…";
+  }
+
+  if (!status.running) {
+    return "Codex app is not running.";
+  }
+
+  const pids = Array.isArray(status.processes)
+    ? status.processes.map((entry) => entry.pid).filter((pid) => Number.isFinite(pid))
+    : [];
+  return pids.length > 0
+    ? `Codex app is running (pid ${pids.join(", ")}).`
+    : "Codex app is running.";
+}
+
+function describeTransferStatusError(error) {
+  const message = toError(error);
+  if (message === "Failed to fetch") {
+    return "Session Hub server is offline. Restart Session Hub on the same port to resume this step.";
+  }
+  return message;
+}
+
+function transferRestartCompleted(status) {
+  if (!status || !status.running) {
+    return false;
+  }
+
+  const baseline = state.transfer.baselineCodexStatus;
+  if (!baseline || !baseline.running) {
+    return true;
+  }
+
+  if (baseline.fingerprint && status.fingerprint) {
+    return baseline.fingerprint !== status.fingerprint;
+  }
+
+  return false;
+}
+
+async function completeTransferFlow(status) {
+  stopTransferCodexPolling();
+  state.transfer.currentCodexStatus = status;
+  state.transfer.phase = "done";
+  try {
+    await loadSessions();
+    sanitizeSelections();
+  } catch {
+    // Keep the success state even if the background refresh fails.
+  }
+  renderAll();
+}
+
+async function pollTransferCodexStatus() {
+  if (!IS_TRANSFER_MODE || state.transfer.phase !== "restart") {
+    return;
+  }
+
+  try {
+    const status = await requestCodexStatus();
+    state.transfer.currentCodexStatus = status;
+    state.transfer.statusError = "";
+    if (transferRestartCompleted(status)) {
+      await completeTransferFlow(status);
+      return;
+    }
+  } catch (error) {
+    state.transfer.statusError = describeTransferStatusError(error);
+  }
+
+  renderTransferFlow();
+  if (state.transfer.phase === "restart") {
+    state.transfer.pollHandle = window.setTimeout(() => {
+  pollTransferCodexStatus().catch((error) => {
+    state.transfer.statusError = describeTransferStatusError(error);
+    renderTransferFlow();
+  });
+    }, 1500);
+  }
+}
+
+function startTransferCodexMonitor(baselineStatus) {
+  stopTransferCodexPolling();
+  state.transfer.phase = "restart";
+  state.transfer.baselineCodexStatus = baselineStatus || null;
+  state.transfer.currentCodexStatus = baselineStatus || null;
+  state.transfer.statusError = "";
+  renderTransferFlow();
+  pollTransferCodexStatus().catch((error) => {
+    state.transfer.statusError = describeTransferStatusError(error);
+    renderTransferFlow();
+  });
+}
+
+function showTransferModal() {
+  if (!IS_TRANSFER_MODE || !dom.transferModal) {
+    return;
+  }
+
+  dom.transferModal.classList.remove("hidden");
+  dom.transferModal.setAttribute("aria-hidden", "false");
+  syncBodyModalState();
+}
+
+function renderTransferProjectRows(projectRows) {
+  dom.transferBody.innerHTML = "";
+
+  if (projectRows.length === 0) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td colspan="5" class="title-cell muted">No active Claude projects matched this filter.</td>
+    `;
+    dom.transferBody.appendChild(row);
+    dom.transferCheckAll.checked = false;
+    dom.transferCheckAll.indeterminate = false;
+    return;
+  }
+
+  const projectByKey = new Map(projectRows.map((project) => [project.projectKey, project]));
+  for (const project of projectRows) {
+    const projectName = project.projectName || "(unknown-project)";
+    const displayProject = truncateText(projectName, 62);
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><input type="checkbox" data-project-key="${escapeHtml(project.projectKey)}" /></td>
+      <td class="title-cell" title="${escapeHtml(projectName)}">${escapeHtml(displayProject)}</td>
+      <td>${project.sessionCount}</td>
+      <td>${formatDate(project.latestUpdatedAt)}</td>
+      <td>${formatBytes(project.sizeBytes)}</td>
+    `;
+    dom.transferBody.appendChild(row);
+  }
+
+  dom.transferBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
+    const projectKey = checkbox.getAttribute("data-project-key");
+    const project = projectByKey.get(projectKey);
+    if (!project) {
+      return;
+    }
+    const selectedCount = project.itemIds.filter((itemId) => state.selected.claude.has(itemId)).length;
+    checkbox.checked = selectedCount === project.itemIds.length && project.itemIds.length > 0;
+    checkbox.indeterminate = selectedCount > 0 && selectedCount < project.itemIds.length;
+    checkbox.addEventListener("change", () => {
+      applyClaudeProjectSelection([project], checkbox.checked);
+      renderAll();
+    });
+  });
+
+  const selectedProjects = projectRows.filter((project) =>
+    project.itemIds.every((itemId) => state.selected.claude.has(itemId))
+  ).length;
+  dom.transferCheckAll.checked = projectRows.length > 0 && selectedProjects === projectRows.length;
+  dom.transferCheckAll.indeterminate = selectedProjects > 0 && selectedProjects < projectRows.length;
+}
+
+function renderTransferFlow() {
+  if (!IS_TRANSFER_MODE || !dom.transferModal) {
+    return;
+  }
+
+  showTransferModal();
+
+  const phase = state.transfer.phase;
+  const selectedProjects = selectedActiveClaudeProjectCount();
+  const totalProjects = activeClaudeProjectCount();
+  const selectedSessions = selectedActiveClaudeSessionCount();
+  const projectRows = filteredClaudeProjectRows();
+  const batch = state.transfer.batch;
+  const showSelection = phase === "select";
+  const hasWarnings = Boolean(batch && batch.errors && batch.errors.length > 0);
+
+  dom.transferTitle.textContent = "Claude to Codex";
+  dom.transferSubtitle.textContent = showSelection
+    ? "Select Claude projects, export directly to Codex, then restart Codex once. This window will detect the restart automatically."
+    : "The transfer runs inside this window from selection to completion.";
+  dom.transferSelectionSummary.textContent = showSelection
+    ? `${selectedProjects}/${totalProjects} projects selected | ${selectedSessions} sessions queued`
+    : batch
+      ? `${batch.sessionCount} session(s) from ${batch.projectCount} project(s)`
+      : "";
+
+  dom.transferControls.classList.toggle("hidden", !showSelection);
+  dom.transferTableWrap.classList.toggle("hidden", !showSelection);
+  dom.transferStatusCard.classList.toggle("hidden", showSelection);
+
+  if (showSelection) {
+    dom.transferQuery.value = state.queries.claude;
+    renderTransferProjectRows(projectRows);
+    dom.transferPrimaryAction.classList.remove("hidden");
+    dom.transferPrimaryAction.disabled = selectedProjects === 0;
+    dom.transferPrimaryAction.textContent = selectedProjects > 0
+      ? `Export ${selectedProjects} Project${selectedProjects > 1 ? "s" : ""} To Codex`
+      : "Export To Codex";
+    dom.transferSecondaryAction.classList.add("hidden");
+    dom.transferStatusExtra.classList.add("hidden");
+    return;
+  }
+
+  dom.transferPrimaryAction.classList.remove("hidden");
+  dom.transferSecondaryAction.classList.add("hidden");
+  dom.transferPrimaryAction.disabled = false;
+  dom.transferStatusExtra.classList.add("hidden");
+  dom.transferStatusExtra.textContent = "";
+
+  if (phase === "exporting") {
+    dom.transferStatusKicker.textContent = "Step 2 / 4";
+    dom.transferStatusTitle.textContent = "Exporting to Codex";
+    dom.transferStatusMessage.textContent = batch
+      ? `Creating ${batch.projectCount} Codex session(s) from the selected Claude projects.`
+      : "Creating Codex sessions from the selected Claude projects.";
+    const progressLabel = state.transfer.progressTotal > 0
+      ? `Project ${state.transfer.progressCurrent} of ${state.transfer.progressTotal}`
+      : "Preparing export";
+    dom.transferStatusDetail.textContent = state.transfer.currentProjectName
+      ? `${progressLabel}: ${state.transfer.currentProjectName}`
+      : progressLabel;
+    dom.transferPrimaryAction.textContent = "Exporting…";
+    dom.transferPrimaryAction.disabled = true;
+    return;
+  }
+
+  if (phase === "restart") {
+    const baselineRunning = Boolean(state.transfer.baselineCodexStatus && state.transfer.baselineCodexStatus.running);
+    dom.transferStatusKicker.textContent = "Step 3 / 4";
+    dom.transferStatusTitle.textContent = baselineRunning ? "Restart Codex" : "Open Codex";
+    dom.transferStatusMessage.textContent = baselineRunning
+      ? "The Codex threads are ready. Fully quit Codex App, then reopen it. This window will mark the transfer complete once it sees the app come back."
+      : "The Codex threads are ready. Open Codex App now. This window will mark the transfer complete once it detects the app.";
+    dom.transferStatusDetail.textContent = codexStatusSummary(state.transfer.currentCodexStatus);
+    if (state.transfer.statusError) {
+      dom.transferStatusExtra.textContent = `Status check failed: ${state.transfer.statusError}`;
+      dom.transferStatusExtra.classList.remove("hidden");
+    } else if (hasWarnings) {
+      dom.transferStatusExtra.textContent = `Some projects failed: ${batch.errors.slice(0, 2).join(" | ")}${batch.errors.length > 2 ? " ..." : ""}`;
+      dom.transferStatusExtra.classList.remove("hidden");
+    }
+    dom.transferPrimaryAction.classList.add("hidden");
+    dom.transferSecondaryAction.textContent = "Check Again";
+    dom.transferSecondaryAction.classList.remove("hidden");
+    dom.transferSecondaryAction.disabled = false;
+    return;
+  }
+
+  if (phase === "done") {
+    dom.transferStatusKicker.textContent = "Step 4 / 4";
+    dom.transferStatusTitle.textContent = "Export complete";
+    dom.transferStatusMessage.textContent = batch
+      ? `Created ${batch.handoffSuccessCount} Codex session(s) from ${batch.projectCount} Claude project(s).`
+      : "The transfer completed.";
+    if (hasWarnings) {
+      dom.transferStatusDetail.textContent =
+        `Completed with warnings: ${batch.errors.slice(0, 2).join(" | ")}${batch.errors.length > 2 ? " ..." : ""}`;
+    } else if (batch && batch.threadRefs.length > 0) {
+      dom.transferStatusDetail.textContent =
+        `Threads: ${batch.threadRefs.slice(0, 2).join(" | ")}${batch.threadRefs.length > 2 ? " ..." : ""}`;
+    } else {
+      dom.transferStatusDetail.textContent = codexStatusSummary(state.transfer.currentCodexStatus);
+    }
+    dom.transferPrimaryAction.textContent = "Transfer More";
+    dom.transferPrimaryAction.disabled = false;
+    return;
+  }
+
+  dom.transferStatusKicker.textContent = "Transfer";
+  dom.transferStatusTitle.textContent = "Export failed";
+  dom.transferStatusMessage.textContent = batch && batch.errors.length > 0
+    ? batch.errors[0]
+    : "The selected Claude projects could not be exported to Codex.";
+  dom.transferStatusDetail.textContent = "Return to selection and retry after checking Codex.";
+  dom.transferPrimaryAction.textContent = "Back To Selection";
+  dom.transferPrimaryAction.disabled = false;
 }
 
 /* ── view switching ───────────────────────────────────── */
@@ -1071,6 +1429,8 @@ function renderAll() {
   renderClaudeExportResult();
   renderGemini();
   renderTrash();
+  renderTransferFlow();
+  syncBodyModalState();
 }
 
 function bootstrapTransferSelectionIfNeeded() {
@@ -1081,6 +1441,7 @@ function bootstrapTransferSelectionIfNeeded() {
   state.stateFilter.claude = "active";
   setActiveStateFilter("claude", "active");
   state.transferSelectionBootstrapped = true;
+  showTransferModal();
 }
 
 async function refreshAll() {
@@ -1279,6 +1640,7 @@ async function runClaudeTransferActive() {
   state.claudeExportResult = null;
   state.claudeExportPrompt = "";
   renderClaudeExportResult();
+  stopTransferCodexPolling();
 
   const sessionsToTransfer = activeClaudeSessionsForSelectedProjects();
   if (sessionsToTransfer.length === 0) {
@@ -1302,26 +1664,9 @@ async function runClaudeTransferActive() {
   const projectCount = groups.length;
   const sessionCount = sessionsToTransfer.length;
 
-  const confirmationTitle = "Transfer Claude Code active sessions to Codex?";
-  const confirmationMessage =
-    `Transfer ${sessionCount} active Claude session(s) from ${projectCount} selected project(s) now?\n\n` +
-    "Session Hub will create 1 new Codex session per Claude project (not one giant merged session).";
-
-  const accepted = await requestConfirmation({
-    title: confirmationTitle,
-    message: confirmationMessage,
-    confirmLabel: "Transfer",
-    cancelLabel: "Cancel",
-    danger: false,
-    requireCheckboxLabel: "I confirm these sessions belong to me and were generated on this device."
-  });
-  if (!accepted) {
-    return;
-  }
-
   const batch = {
-    projectCount: groups.length,
-    sessionCount: sessionsToTransfer.length,
+    projectCount,
+    sessionCount,
     exportedProjects: 0,
     failedProjects: 0,
     handoffSuccessCount: 0,
@@ -1334,13 +1679,29 @@ async function runClaudeTransferActive() {
     errors: []
   };
 
+  let codexStatusBaseline = null;
+  try {
+    codexStatusBaseline = await requestCodexStatus();
+  } catch (error) {
+    state.transfer.statusError = describeTransferStatusError(error);
+  }
+
+  state.transfer.phase = "exporting";
+  state.transfer.progressCurrent = 0;
+  state.transfer.progressTotal = groups.length;
+  state.transfer.currentProjectName = "";
+  state.transfer.batch = batch;
+  renderTransferFlow();
+
   for (let index = 0; index < groups.length; index += 1) {
     const group = groups[index];
+    state.transfer.progressCurrent = index + 1;
+    state.transfer.currentProjectName = group.projectName || "(unknown-project)";
+    renderTransferFlow();
     try {
       const exported = await requestClaudeExport(group.itemIds, {
         handoffToCodex: true,
-        launchCodexApp: index === groups.length - 1,
-        restartCodexApp: index === groups.length - 1
+        launchCodexApp: false
       });
 
       batch.exportedProjects += 1;
@@ -1373,27 +1734,38 @@ async function runClaudeTransferActive() {
     }
   }
 
-  state.claudeExportResult = { batch };
-  state.claudeExportPrompt = "";
-  renderClaudeExportResult();
+  state.transfer.batch = batch;
+  state.transfer.progressCurrent = batch.projectCount;
+
+  if (batch.handoffSuccessCount === 0) {
+    state.transfer.phase = "error";
+    renderTransferFlow();
+    showFeedback(
+      `transfer: failed for ${batch.projectCount} project(s). Check the popup for details.`,
+      "error"
+    );
+    return;
+  }
+
+  if (!codexStatusBaseline) {
+    try {
+      codexStatusBaseline = await requestCodexStatus();
+    } catch (error) {
+      state.transfer.statusError = describeTransferStatusError(error);
+    }
+  }
 
   if (batch.failedProjects === 0 && batch.handoffFailureCount === 0) {
-    const cliHint = batch.launchedCodexAppCount === 0
-      ? " App not opened? run `codex resume --all`."
-      : "";
     const compressionHint = batch.trimmedCount > 0
       ? ` ${batch.trimmedCount} thread(s) were compressed for inline handoff.`
       : "";
-    const restartHint = batch.restartedCodexAppCount > 0
-      ? " Codex App was restarted after the final handoff to refresh the desktop thread list."
-      : "";
     showFeedback(
-      `transfer: ${batch.sessionCount} session(s) across ${batch.projectCount} project(s), injected ${batch.handoffSuccessCount} Codex thread(s).${compressionHint}${restartHint}${cliHint}`,
+      `transfer: ${batch.sessionCount} session(s) across ${batch.projectCount} project(s) exported to Codex.${compressionHint} Restart Codex to finish.`,
       "ok"
     );
   } else {
     showFeedback(
-      `transfer: partial success (${batch.handoffSuccessCount}/${batch.projectCount} projects primed). See details below.`,
+      `transfer: partial success (${batch.handoffSuccessCount}/${batch.projectCount} projects exported). Restart Codex after checking the popup.`,
       "error"
     );
   }
@@ -1401,6 +1773,7 @@ async function runClaudeTransferActive() {
   await loadSessions();
   sanitizeSelections();
   renderAll();
+  startTransferCodexMonitor(codexStatusBaseline);
 }
 
 async function runGeminiAction(actionName) {
@@ -1515,6 +1888,12 @@ function wireEvents() {
     }
     dom.confirmAccept.disabled = !dom.confirmCheckInput.checked;
   });
+
+  if (IS_TRANSFER_MODE && dom.transferBackdrop) {
+    dom.transferBackdrop.addEventListener("click", (event) => {
+      event.preventDefault();
+    });
+  }
 
   // Theme toggle
   document.getElementById("theme-toggle").addEventListener("click", () => {
@@ -1634,6 +2013,68 @@ function wireEvents() {
       .then(() => showFeedback("Copied Codex import prompt.", "ok"))
       .catch((error) => showFeedback(toError(error), "error"));
   });
+
+  if (IS_TRANSFER_MODE) {
+    dom.transferQuery.addEventListener("input", (event) => {
+      state.queries.claude = event.target.value;
+      renderAll();
+    });
+    dom.transferSelectFiltered.addEventListener("click", () => {
+      setFilteredClaudeProjectSelection(true);
+      renderAll();
+    });
+    dom.transferClearSelection.addEventListener("click", () => {
+      state.selected.claude.clear();
+      renderAll();
+    });
+    dom.transferCheckAll.addEventListener("change", (event) => {
+      setFilteredClaudeProjectSelection(event.target.checked);
+      renderAll();
+    });
+    dom.transferSecondaryAction.addEventListener("click", () => {
+      if (state.transfer.phase !== "restart") {
+        return;
+      }
+      stopTransferCodexPolling();
+      pollTransferCodexStatus().catch((error) => {
+        state.transfer.statusError = describeTransferStatusError(error);
+        renderTransferFlow();
+      });
+    });
+    dom.transferPrimaryAction.addEventListener("click", () => {
+      if (state.transfer.phase === "select") {
+        runClaudeTransferActive().catch((error) => {
+          state.transfer.phase = "error";
+          state.transfer.batch = {
+            projectCount: selectedActiveClaudeProjectCount(),
+            sessionCount: selectedActiveClaudeSessionCount(),
+            exportedProjects: 0,
+            failedProjects: 1,
+            handoffSuccessCount: 0,
+            handoffFailureCount: 1,
+            launchedCodexAppCount: 0,
+            eventCount: 0,
+            threadRefs: [],
+            errors: [toError(error)]
+          };
+          renderTransferFlow();
+          showFeedback(toError(error), "error");
+        });
+        return;
+      }
+
+      if (state.transfer.phase === "done") {
+        resetTransferFlow({ clearSelection: true });
+        renderAll();
+        return;
+      }
+
+      if (state.transfer.phase === "error") {
+        resetTransferFlow();
+        renderAll();
+      }
+    });
+  }
 
   // Gemini view
   dom.geminiQuery.addEventListener("input", (event) => {

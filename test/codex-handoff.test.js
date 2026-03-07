@@ -5,7 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const { handoffToCodexThread } = require("../src/codex-handoff");
+const { handoffToCodexThread, resolveCodexCommand } = require("../src/codex-handoff");
 
 function createMockAppServerChild({
   threadId = "019cbafe-1111-7222-8333-444455556666",
@@ -215,6 +215,7 @@ test("handoffToCodexThread creates thread with never/danger-full-access and inje
     prompt,
     cwd,
     threadName,
+    codexCommand: "codex",
     launchCodexApp: true,
     syncDesktopState: false,
     timeoutMs: 2000,
@@ -309,6 +310,7 @@ test("handoffToCodexThread still reports launched when deep link open fails", as
   const result = await handoffToCodexThread({
     prompt: "continue here",
     cwd,
+    codexCommand: "codex",
     launchCodexApp: true,
     syncDesktopState: false,
     timeoutMs: 2000,
@@ -355,6 +357,7 @@ test("handoffToCodexThread still reports launched when workspace open fails but 
   const result = await handoffToCodexThread({
     prompt: "continue here",
     cwd: "/Users/test/projects/nebula-kit",
+    codexCommand: "codex",
     launchCodexApp: true,
     syncDesktopState: false,
     timeoutMs: 2000,
@@ -399,6 +402,7 @@ test("handoffToCodexThread updates desktop thread order in CODEX_HOME", async ()
       prompt: "continue here",
       cwd: "/Users/test/projects/nebula-kit",
       threadName: "nebula-kit · Continue migration",
+      codexCommand: "codex",
       launchCodexApp: false,
       timeoutMs: 2000,
       spawnImpl,
@@ -468,6 +472,7 @@ test("handoffToCodexThread restarts Codex app on macOS before reopening the impo
       prompt: "continue here",
       cwd: "/Users/test/projects/nebula-kit",
       threadName: "nebula-kit · Restart after import",
+      codexCommand: "codex",
       launchCodexApp: true,
       restartCodexApp: true,
       timeoutMs: 2000,
@@ -508,4 +513,50 @@ test("handoffToCodexThread restarts Codex app on macOS before reopening the impo
     }
     await fs.rm(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test("resolveCodexCommand prefers installed macOS app binary when available", async () => {
+  const command = await resolveCodexCommand({
+    platform: "darwin",
+    fileExistsImpl: async (targetPath) =>
+      targetPath === "/Applications/Codex.app/Contents/Resources/codex"
+  });
+
+  assert.equal(command, "/Applications/Codex.app/Contents/Resources/codex");
+});
+
+test("handoffToCodexThread rewrites ENOENT into a clearer Codex CLI error", async () => {
+  const spawnImpl = (command, args) => {
+    if (command === "codex" && args[0] === "app-server") {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdin = {
+        write() {},
+        end() {}
+      };
+      child.killed = false;
+      child.kill = () => true;
+      setImmediate(() => {
+        const error = new Error("spawn codex ENOENT");
+        error.code = "ENOENT";
+        child.emit("error", error);
+      });
+      return child;
+    }
+    throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
+  };
+
+  await assert.rejects(
+    () => handoffToCodexThread({
+      prompt: "continue here",
+      cwd: "/Users/test/projects/nebula-kit",
+      launchCodexApp: false,
+      timeoutMs: 2000,
+      spawnImpl,
+      codexCommand: "codex",
+      platform: "darwin"
+    }),
+    /Codex CLI was not found/
+  );
 });

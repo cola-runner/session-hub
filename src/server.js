@@ -5,6 +5,7 @@ const { isPathInsideRoot } = require("./fs-utils");
 const { SessionStore } = require("./session-store");
 const { ClaudeSessionStore, isClaudeItemId } = require("./claude-session-store");
 const { GeminiSessionStore, isGeminiItemId } = require("./gemini-session-store");
+const { detectCodexAppStatus } = require("./codex-app-status");
 const { exportClaudeSessions } = require("./claude-export-service");
 const { TrashStore } = require("./trash-store");
 
@@ -221,13 +222,17 @@ async function startServer({
   geminiHome,
   trashRoot,
   retentionDays = 30,
-  port = 0
+  port = 0,
+  codexStatusProvider
 }) {
   const sessionStore = new SessionStore({ codexHome });
   const claudeStore = new ClaudeSessionStore({ claudeHome });
   const geminiStore = new GeminiSessionStore({ geminiHome });
   const trashStore = new TrashStore({ codexHome, trashRoot, retentionDays });
   const cleanupReport = await trashStore.cleanupExpired();
+  const getCodexStatus = typeof codexStatusProvider === "function"
+    ? codexStatusProvider
+    : () => detectCodexAppStatus();
 
   const server = http.createServer(async (request, response) => {
     if (!request.url || !request.method) {
@@ -251,6 +256,11 @@ async function startServer({
           trashRoot,
           retentionDays
         });
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/codex/status") {
+        json(response, 200, await getCodexStatus());
         return;
       }
 

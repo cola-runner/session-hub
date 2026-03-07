@@ -297,6 +297,57 @@
       </section>
     </main>
 
+    <div id="transfer-modal" class="modal hidden" aria-hidden="true">
+      <div id="transfer-backdrop" class="modal-backdrop"></div>
+      <section
+        class="modal-dialog transfer-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transfer-title"
+        aria-describedby="transfer-subtitle"
+      >
+        <p class="eyebrow">Claude -> Codex</p>
+        <h2 id="transfer-title">Claude to Codex</h2>
+        <p id="transfer-subtitle" class="modal-message"></p>
+
+        <p id="transfer-selection-summary" class="muted transfer-selection-summary"></p>
+
+        <div id="transfer-controls" class="controls transfer-controls">
+          <input id="transfer-query" type="search" placeholder="Search Claude projects" />
+          <button id="transfer-select-filtered" class="btn ghost">Select Visible</button>
+          <button id="transfer-clear-selection" class="btn ghost">Clear</button>
+        </div>
+
+        <div id="transfer-table-wrap" class="table-wrap transfer-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th><input id="transfer-check-all" type="checkbox" /></th>
+                <th>Project</th>
+                <th>Sessions</th>
+                <th>Updated</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody id="transfer-body"></tbody>
+          </table>
+        </div>
+
+        <section id="transfer-status-card" class="transfer-status-card hidden" aria-live="polite">
+          <p id="transfer-status-kicker" class="transfer-status-kicker"></p>
+          <h3 id="transfer-status-title"></h3>
+          <p id="transfer-status-message" class="transfer-status-message"></p>
+          <p id="transfer-status-detail" class="muted transfer-status-detail"></p>
+          <p id="transfer-status-extra" class="muted transfer-status-extra hidden"></p>
+        </section>
+
+        <div class="modal-actions transfer-actions">
+          <button id="transfer-secondary-action" class="btn ghost hidden">Check Again</button>
+          <button id="transfer-primary-action" class="btn primary">Export To Codex</button>
+        </div>
+      </section>
+    </div>
+
     <div id="confirm-modal" class="modal hidden" aria-hidden="true">
       <div id="confirm-backdrop" class="modal-backdrop"></div>
       <section

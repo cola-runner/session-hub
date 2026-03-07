@@ -34,11 +34,7 @@ Then install:
 curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
 ```
 
-Then start:
-
-```bash
-session-hub start
-```
+The installer now launches Session Hub automatically in the background and opens the browser directly into the Claude -> Codex transfer popup.
 
 ## Install with Homebrew (Optional)
 
@@ -83,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/script
 session-hub start
 ```
 
-This starts a local server and opens the web UI in **transfer mode** (Claude tab focused).
+This starts a local server and opens the web UI in the **Claude -> Codex transfer popup**.
 
 ### 3) Manage sessions
 
@@ -95,17 +91,12 @@ Use the tabs in the UI:
 ### 4) Transfer Claude sessions to Codex (recommended)
 
 In transfer mode:
-1. Filter to **Active** and select projects to migrate (checking one session selects that whole project).
-2. Click **Transfer Selected Projects To Codex**.
-3. Confirm ownership.
+1. Session Hub opens a single popup with **active Claude sessions grouped by project**.
+2. Select the projects to migrate.
+3. Click **Export To Codex**. There is no extra confirmation step.
 4. Session Hub exports locally and creates **one new Codex session per selected Claude project**.
-5. Codex app opens so you can continue right away.
-
-If Codex app does not open (or you use CLI only), continue from terminal:
-- `codex resume --all`
-- or `codex resume <threadId>`
-
-If automatic handoff fails, use the fallback copy button.
+5. The popup detects the Codex app state and asks you to **restart Codex manually once**.
+6. After Codex is reopened, the popup marks the transfer as complete.
 
 ### 5) Manual export (optional)
 
@@ -188,6 +179,12 @@ Before using the installer, verify Node is available:
 ```bash
 node -v
 curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | bash
+```
+
+To install without launching the popup immediately:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | SESSION_HUB_AUTO_START=0 bash
 ```
 
 Optional install variables:

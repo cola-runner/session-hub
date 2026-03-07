@@ -7,6 +7,9 @@ TARBALL_URL="${SESSION_HUB_TARBALL_URL:-https://github.com/${REPO}/archive/refs/
 INSTALL_ROOT="${SESSION_HUB_INSTALL_ROOT:-$HOME/.session-hub}"
 BIN_DIR="${SESSION_HUB_BIN_DIR:-$HOME/.local/bin}"
 LAUNCHER_PATH="${BIN_DIR}/session-hub"
+AUTO_START="${SESSION_HUB_AUTO_START:-1}"
+LOG_PATH="${SESSION_HUB_LOG_PATH:-$INSTALL_ROOT/session-hub.log}"
+PID_PATH="${SESSION_HUB_PID_PATH:-$INSTALL_ROOT/session-hub.pid}"
 
 assert_safe_install_root() {
   local target="${1%/}"
@@ -74,4 +77,17 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 echo
-echo "Start with: session-hub start"
+if [[ "$AUTO_START" == "0" ]]; then
+  echo "Start with: session-hub start"
+  exit 0
+fi
+
+echo "Launching Session Hub in the background..."
+nohup node "$INSTALL_ROOT/src/cli.js" start >"$LOG_PATH" 2>&1 < /dev/null &
+session_hub_pid=$!
+echo "$session_hub_pid" >"$PID_PATH"
+
+echo "Session Hub PID: $session_hub_pid"
+echo "Session Hub log: $LOG_PATH"
+echo "Browser will open automatically to the Claude -> Codex transfer popup."
+echo "If it does not open, run: session-hub start"

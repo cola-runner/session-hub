@@ -910,11 +910,35 @@ tbody tr:last-child td {
   box-shadow: 0 0 12px rgba(63, 119, 191, 0.3);
 }
 
+[data-theme="dark"] .pill.claude {
+  color: #cc7832;
+  border-color: rgba(204, 120, 50, 0.3);
+  background: rgba(204, 120, 50, 0.08);
+}
+
+body.transfer-mode .notice,
+body.transfer-mode .feedback,
+body.transfer-mode .tabs,
+body.transfer-mode .view,
+body.transfer-mode #config-info,
+body.transfer-mode #refresh-all,
+body.transfer-mode #cleanup-expired {
+  display: none !important;
+}
+
+body.transfer-mode .app-shell {
+  width: min(1040px, 100% - 2rem);
+  padding-bottom: 2rem;
+}
+
+body.transfer-mode .topbar {
+  padding-bottom: 1rem;
+}
+
 .muted {
   color: var(--text-dim);
   font-size: 0.72rem;
 }
-
 body.modal-open {
   overflow: hidden;
 }
@@ -988,6 +1012,69 @@ body.modal-open {
   gap: 10px;
 }
 
+.transfer-dialog {
+  width: min(1040px, 100%);
+  padding: 1.75rem;
+}
+
+.transfer-selection-summary {
+  margin: -0.25rem 0 0.9rem;
+}
+
+.transfer-controls {
+  margin-bottom: 1rem;
+}
+
+.transfer-table-wrap {
+  max-height: min(52vh, 560px);
+  overflow: auto;
+}
+
+.transfer-status-card {
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  padding: 1rem 1.1rem;
+  min-height: 220px;
+}
+
+.transfer-status-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  font-size: 0.62rem;
+  margin-bottom: 0.55rem;
+}
+
+.transfer-status-card h3 {
+  font-family: var(--display);
+  font-size: 1.8rem;
+  color: var(--text-strong);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.65rem;
+}
+
+.transfer-status-message {
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.7;
+  margin-bottom: 0.85rem;
+}
+
+.transfer-status-detail,
+.transfer-status-extra {
+  line-height: 1.7;
+  font-size: 0.75rem;
+}
+
+.transfer-status-extra {
+  margin-top: 0.45rem;
+}
+
+.transfer-actions {
+  margin-top: 1rem;
+}
+
 @media (max-width: 1180px) {
   .hero-grid {
     grid-template-columns: 1fr;
@@ -1059,6 +1146,14 @@ body.modal-open {
 
   .modal {
     padding: 12px;
+  }
+
+  .transfer-dialog {
+    padding: 1rem;
+  }
+
+  .transfer-status-card {
+    min-height: unset;
   }
 }
 
