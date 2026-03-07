@@ -386,6 +386,52 @@ test("exportClaudeSessions can hand off directly to a Codex thread", async () =>
   await fs.rm(exportRoot, { recursive: true, force: true });
 });
 
+test("exportClaudeSessions uses a natural thread title instead of an absolute project path", async () => {
+  const claudeHome = await createTempDir("session-hub-export-title-");
+  const exportRoot = await createTempDir("session-hub-export-title-out-");
+  const project = path.join(claudeHome, "projects", "-Users-demo-user-Documents-github-orbit-notes");
+  await writeClaudeSession(project, "sess-title", [
+    JSON.stringify({
+      type: "user",
+      sessionId: "sess-title",
+      timestamp: "2026-03-02T17:10:00.000Z",
+      cwd: "/Users/test/projects/orbit-notes",
+      message: {
+        role: "user",
+        content: "Fix export restart flow in the popup"
+      }
+    })
+  ]);
+
+  const handoffCalls = [];
+  const claudeStore = new ClaudeSessionStore({ claudeHome });
+  const exported = await exportClaudeSessions({
+    itemIds: [encodeClaudeItemId("sess-title")],
+    ownershipConfirmed: true,
+    handoffToCodex: true,
+    handoffFn: async (payload) => {
+      handoffCalls.push(payload);
+      return {
+        threadId: "thread-title-1",
+        turnId: "turn-title-1",
+        launchedCodexApp: false,
+        userMessageNotificationSeen: true
+      };
+    },
+    claudeHome,
+    exportRoot,
+    claudeStore
+  });
+
+  assert.equal(handoffCalls.length, 1);
+  assert.equal(handoffCalls[0].threadName, "Fix export restart flow in the popup");
+  assert.doesNotMatch(handoffCalls[0].threadName, /\/Users\/demo-user\/Documents\/github\/orbit-notes/);
+  assert.equal(exported.codexHandoff.threadName, "Fix export restart flow in the popup");
+
+  await fs.rm(claudeHome, { recursive: true, force: true });
+  await fs.rm(exportRoot, { recursive: true, force: true });
+});
+
 test("exportClaudeSessions trims oversized inline handoff packs", async () => {
   const claudeHome = await createTempDir("session-hub-export-inline-trim-");
   const exportRoot = await createTempDir("session-hub-export-inline-trim-out-");

@@ -257,8 +257,10 @@ test("handoffToCodexThread creates thread with never/danger-full-access and inje
   });
   assert.match(turnStartRequest.params.input[0].text, /^nebula-kit · Batch archive UI/m);
   assert.match(turnStartRequest.params.input[0].text, /Imported Claude context for this Codex thread/);
+  assert.match(turnStartRequest.params.input[0].text, /read the migrated context below in full/i);
   assert.match(turnStartRequest.params.input[0].text, /Do not run tools/);
-  assert.match(turnStartRequest.params.input[0].text, /Reply with one short confirmation/);
+  assert.match(turnStartRequest.params.input[0].text, /state the current goal or project state/i);
+  assert.match(turnStartRequest.params.input[0].text, /ready to continue/i);
   assert.match(turnStartRequest.params.input[0].text, /Carry the Claude context/);
   assert.doesNotMatch(turnStartRequest.params.input[0].text, /Prompt file:/);
   assert.doesNotMatch(turnStartRequest.params.input[0].text, /Context file:/);

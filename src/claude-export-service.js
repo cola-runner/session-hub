@@ -118,6 +118,17 @@ function projectNameFromPath(value) {
     .pop() || "";
 }
 
+function normalizeProjectLabel(value) {
+  const normalized = toOneLine(value);
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.includes("/") || normalized.includes("\\")) {
+    return projectNameFromPath(normalized);
+  }
+  return normalized;
+}
+
 function countChars(value) {
   return Array.from(String(value || "")).length;
 }
@@ -176,7 +187,9 @@ function isWeakThreadTitleCandidate(value) {
 function buildCodexThreadName({ sessions = [], pack, handoffCwd } = {}) {
   const titledSession = sessions.find((session) => !isWeakThreadTitleCandidate(session.title));
   const projectSession = sessions.find((session) => toOneLine(session.projectName));
-  const projectName = toOneLine(projectSession ? projectSession.projectName : projectNameFromPath(handoffCwd));
+  const projectName = normalizeProjectLabel(
+    projectSession ? projectSession.projectName : projectNameFromPath(handoffCwd)
+  );
   const sessionTitle = clipText(titledSession ? titledSession.title : "", 72);
   const goalTitle = clipText(pack && pack.goal, 72);
 
@@ -190,13 +203,7 @@ function buildCodexThreadName({ sessions = [], pack, handoffCwd } = {}) {
   if (!summary) {
     return clipText(fallback, MAX_THREAD_NAME_CHARS);
   }
-  if (!projectName) {
-    return clipText(summary, MAX_THREAD_NAME_CHARS);
-  }
-  if (summary.toLowerCase().includes(projectName.toLowerCase())) {
-    return clipText(summary, MAX_THREAD_NAME_CHARS);
-  }
-  return clipText(`${projectName} · ${summary}`, MAX_THREAD_NAME_CHARS);
+  return clipText(summary, MAX_THREAD_NAME_CHARS);
 }
 
 function createExportId(now = new Date()) {
@@ -936,7 +943,8 @@ function renderInlineHandoffPack(pack, options = {}) {
 
   const buildText = () => {
     const lines = [
-      "Claude Code migration context for this new Codex thread.",
+      "Read this imported Claude Code context now.",
+      "Treat it as the active working context for this thread and be ready to continue immediately.",
       "",
       "## Sessions Included",
       ...sessionLines,
