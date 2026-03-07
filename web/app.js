@@ -29,7 +29,7 @@ function setStoredTheme(theme) {
 }
 
 // Apply immediately to avoid flash
-applyTheme(getStoredTheme() || "light");
+applyTheme(getStoredTheme() || "dark");
 
 const URL_PARAMS = new URLSearchParams(window.location.search);
 const IS_TRANSFER_MODE = URL_PARAMS.get("mode") === "transfer";
@@ -128,6 +128,7 @@ const dom = {
 
   transferModal: document.getElementById("transfer-modal"),
   transferBackdrop: document.getElementById("transfer-backdrop"),
+  transferClose: document.getElementById("transfer-close"),
   transferTitle: document.getElementById("transfer-title"),
   transferSubtitle: document.getElementById("transfer-subtitle"),
   transferProgress: document.getElementById("transfer-progress"),
@@ -739,6 +740,26 @@ function showTransferModal() {
   dom.transferModal.classList.remove("hidden");
   dom.transferModal.setAttribute("aria-hidden", "false");
   syncBodyModalState();
+}
+
+function closeTransferMode() {
+  if (!IS_TRANSFER_MODE) {
+    return;
+  }
+
+  stopTransferCodexPolling();
+  if (dom.transferModal) {
+    dom.transferModal.classList.add("hidden");
+    dom.transferModal.setAttribute("aria-hidden", "true");
+  }
+  syncBodyModalState();
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.delete("mode");
+  if (nextUrl.searchParams.get("view") === "claude") {
+    nextUrl.searchParams.delete("view");
+  }
+  window.location.assign(nextUrl.toString());
 }
 
 function renderTransferProjectRows(projectRows) {
@@ -1956,6 +1977,7 @@ function wireEvents() {
   if (IS_TRANSFER_MODE && dom.transferBackdrop) {
     dom.transferBackdrop.addEventListener("click", (event) => {
       event.preventDefault();
+      closeTransferMode();
     });
   }
 
@@ -2079,6 +2101,11 @@ function wireEvents() {
   });
 
   if (IS_TRANSFER_MODE) {
+    if (dom.transferClose) {
+      dom.transferClose.addEventListener("click", () => {
+        closeTransferMode();
+      });
+    }
     dom.transferQuery.addEventListener("input", (event) => {
       state.queries.claude = event.target.value;
       renderAll();
