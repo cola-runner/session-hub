@@ -1099,24 +1099,24 @@ body.modal-open {
 
 .transfer-progress-segment[data-state="done"],
 .transfer-progress-segment[data-state="current"] {
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
 }
 
 .transfer-progress-segment[data-state="done"]::after,
 .transfer-progress-segment[data-state="current"]::after {
-  background: var(--ok);
+  background: transparent;
 }
 
 .transfer-progress-segment[data-state="current"] {
-  box-shadow: inset 0 0 0 1px rgba(62, 207, 142, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 .transfer-progress-segment[data-state="error"] {
-  background: var(--surface);
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.92), rgba(225, 102, 102, 0.88));
 }
 
 .transfer-progress-segment[data-state="error"]::after {
-  background: var(--danger);
+  background: transparent;
 }
 
 .transfer-progress-label {
@@ -1130,11 +1130,11 @@ body.modal-open {
 
 .transfer-progress-segment[data-state="done"] .transfer-progress-label,
 .transfer-progress-segment[data-state="current"] .transfer-progress-label {
-  color: var(--text-strong);
+  color: var(--accent-contrast);
 }
 
 .transfer-progress-segment[data-state="error"] .transfer-progress-label {
-  color: var(--text-strong);
+  color: #ffffff;
 }
 
 .transfer-selection-summary {
