@@ -185,7 +185,7 @@ test("handoffToCodexThread creates thread with never/danger-full-access and inje
   const threadId = "019cbafe-2222-7333-8444-555566667777";
   const turnId = "019cbafe-2222-7333-8444-555566667778";
   const prompt = "## Goal\nCarry the Claude context into this new Codex thread.";
-  const threadName = "nebula-kit · Batch archive UI";
+  const threadName = "orbit-notes · Batch archive UI";
 
   const spawnImpl = (command, args, options) => {
     spawnCalls.push({ command, args, options });
@@ -210,7 +210,7 @@ test("handoffToCodexThread creates thread with never/danger-full-access and inje
     throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
   };
 
-  const cwd = "/Users/test/projects/nebula-kit";
+  const cwd = "/Users/test/projects/orbit-notes";
   const result = await handoffToCodexThread({
     prompt,
     cwd,
@@ -255,7 +255,7 @@ test("handoffToCodexThread creates thread with never/danger-full-access and inje
   assert.deepEqual(turnStartRequest.params.sandboxPolicy, {
     type: "dangerFullAccess"
   });
-  assert.match(turnStartRequest.params.input[0].text, /^nebula-kit · Batch archive UI/m);
+  assert.match(turnStartRequest.params.input[0].text, /^orbit-notes · Batch archive UI/m);
   assert.match(turnStartRequest.params.input[0].text, /Imported Claude context for this Codex thread/);
   assert.match(turnStartRequest.params.input[0].text, /read the migrated context below in full/i);
   assert.match(turnStartRequest.params.input[0].text, /Do not run tools/);
@@ -308,7 +308,7 @@ test("handoffToCodexThread still reports launched when deep link open fails", as
     throw new Error(`unexpected spawn call: ${command} ${args.join(" ")}`);
   };
 
-  const cwd = "/Users/test/projects/nebula-kit";
+  const cwd = "/Users/test/projects/orbit-notes";
   const result = await handoffToCodexThread({
     prompt: "continue here",
     cwd,
@@ -358,7 +358,7 @@ test("handoffToCodexThread still reports launched when workspace open fails but 
 
   const result = await handoffToCodexThread({
     prompt: "continue here",
-    cwd: "/Users/test/projects/nebula-kit",
+    cwd: "/Users/test/projects/orbit-notes",
     codexCommand: "codex",
     launchCodexApp: true,
     syncDesktopState: false,
@@ -402,8 +402,8 @@ test("handoffToCodexThread updates desktop thread order in CODEX_HOME", async ()
 
     const result = await handoffToCodexThread({
       prompt: "continue here",
-      cwd: "/Users/test/projects/nebula-kit",
-      threadName: "nebula-kit · Continue migration",
+      cwd: "/Users/test/projects/orbit-notes",
+      threadName: "orbit-notes · Continue migration",
       codexCommand: "codex",
       launchCodexApp: false,
       timeoutMs: 2000,
@@ -415,7 +415,7 @@ test("handoffToCodexThread updates desktop thread order in CODEX_HOME", async ()
     assert.equal(result.mode, "inline-pack");
     const saved = JSON.parse(await fs.readFile(path.join(tmpRoot, ".codex-global-state.json"), "utf8"));
     assert.equal(saved["thread-titles"].order[0], threadId);
-    assert.equal(saved["thread-titles"].titles[threadId], "nebula-kit · Continue migration");
+    assert.equal(saved["thread-titles"].titles[threadId], "orbit-notes · Continue migration");
   } finally {
     if (previousCodexHome === undefined) {
       delete process.env.CODEX_HOME;
@@ -472,8 +472,8 @@ test("handoffToCodexThread restarts Codex app on macOS before reopening the impo
 
     const result = await handoffToCodexThread({
       prompt: "continue here",
-      cwd: "/Users/test/projects/nebula-kit",
-      threadName: "nebula-kit · Restart after import",
+      cwd: "/Users/test/projects/orbit-notes",
+      threadName: "orbit-notes · Restart after import",
       codexCommand: "codex",
       launchCodexApp: true,
       restartCodexApp: true,
@@ -489,7 +489,7 @@ test("handoffToCodexThread restarts Codex app on macOS before reopening the impo
     assert.deepEqual(spawnCalls[1].args, ["-e", 'tell application "Codex" to quit']);
     assert.deepEqual(spawnCalls[2], {
       command: "codex",
-      args: ["app", "/Users/test/projects/nebula-kit"],
+      args: ["app", "/Users/test/projects/orbit-notes"],
       options: {
         detached: true,
         stdio: "ignore"
@@ -506,7 +506,7 @@ test("handoffToCodexThread restarts Codex app on macOS before reopening the impo
 
     const saved = JSON.parse(await fs.readFile(path.join(tmpRoot, ".codex-global-state.json"), "utf8"));
     assert.equal(saved["thread-titles"].order[0], threadId);
-    assert.equal(saved["thread-titles"].titles[threadId], "nebula-kit · Restart after import");
+    assert.equal(saved["thread-titles"].titles[threadId], "orbit-notes · Restart after import");
   } finally {
     if (previousCodexHome === undefined) {
       delete process.env.CODEX_HOME;
@@ -552,7 +552,7 @@ test("handoffToCodexThread rewrites ENOENT into a clearer Codex CLI error", asyn
   await assert.rejects(
     () => handoffToCodexThread({
       prompt: "continue here",
-      cwd: "/Users/test/projects/nebula-kit",
+      cwd: "/Users/test/projects/orbit-notes",
       launchCodexApp: false,
       timeoutMs: 2000,
       spawnImpl,

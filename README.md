@@ -288,6 +288,10 @@ One-line:
 curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/uninstall.sh | bash
 ```
 
+## License
+
+[MIT](./LICENSE)
+
 Local:
 
 ```bash

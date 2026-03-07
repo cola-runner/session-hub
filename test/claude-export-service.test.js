@@ -389,7 +389,7 @@ test("exportClaudeSessions can hand off directly to a Codex thread", async () =>
 test("exportClaudeSessions uses a natural thread title instead of an absolute project path", async () => {
   const claudeHome = await createTempDir("session-hub-export-title-");
   const exportRoot = await createTempDir("session-hub-export-title-out-");
-  const project = path.join(claudeHome, "projects", "-Users-demo-user-Documents-github-orbit-notes");
+  const project = path.join(claudeHome, "projects", "-Users-test-projects-orbit-notes");
   await writeClaudeSession(project, "sess-title", [
     JSON.stringify({
       type: "user",
@@ -425,7 +425,7 @@ test("exportClaudeSessions uses a natural thread title instead of an absolute pr
 
   assert.equal(handoffCalls.length, 1);
   assert.equal(handoffCalls[0].threadName, "Fix export restart flow in the popup");
-  assert.doesNotMatch(handoffCalls[0].threadName, /\/Users\/demo-user\/Documents\/github\/orbit-notes/);
+  assert.doesNotMatch(handoffCalls[0].threadName, /\/Users\/test\/projects\/orbit-notes/);
   assert.equal(exported.codexHandoff.threadName, "Fix export restart flow in the popup");
 
   await fs.rm(claudeHome, { recursive: true, force: true });

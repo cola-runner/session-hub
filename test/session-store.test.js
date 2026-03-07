@@ -144,11 +144,11 @@ test("Claude import sessions use the first handoff line as title", async () => {
   await writeRolloutFile(
     sessionPath,
     `{"type":"session_meta","payload":{"id":"${threadId}","source":"vscode"}}\n` +
-      '{"type":"event_msg","payload":{"type":"user_message","message":"nebula-kit · Git username setup\\n\\nImported Claude context for this Codex thread.\\n\\nFor this first turn only:\\n- Do not run tools."}}\n'
+      '{"type":"event_msg","payload":{"type":"user_message","message":"orbit-notes · Git username setup\\n\\nImported Claude context for this Codex thread.\\n\\nFor this first turn only:\\n- Do not run tools."}}\n'
   );
 
   const listed = await store.listSessions();
-  assert.equal(listed.items[0].title, "nebula-kit · Git username setup");
+  assert.equal(listed.items[0].title, "orbit-notes · Git username setup");
   assert.equal(listed.items[0].hasUserMessage, true);
   assert.equal(listed.items[0].isSystemMessage, false);
 
@@ -174,14 +174,14 @@ test("legacy Claude import sessions fall back to desktop thread title", async ()
   await writeGlobalState(codexHome, {
     "thread-titles": {
       titles: {
-        [threadId]: "nebula-kit · DNS verification"
+        [threadId]: "orbit-notes · DNS verification"
       },
       order: [threadId]
     }
   });
 
   const listed = await store.listSessions();
-  assert.equal(listed.items[0].title, "nebula-kit · DNS verification");
+  assert.equal(listed.items[0].title, "orbit-notes · DNS verification");
   assert.equal(listed.items[0].hasUserMessage, true);
   assert.equal(listed.items[0].isSystemMessage, false);
 
