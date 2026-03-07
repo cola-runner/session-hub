@@ -130,6 +130,7 @@ const dom = {
   transferBackdrop: document.getElementById("transfer-backdrop"),
   transferTitle: document.getElementById("transfer-title"),
   transferSubtitle: document.getElementById("transfer-subtitle"),
+  transferProgress: document.getElementById("transfer-progress"),
   transferSelectionSummary: document.getElementById("transfer-selection-summary"),
   transferControls: document.getElementById("transfer-controls"),
   transferQuery: document.getElementById("transfer-query"),
@@ -791,6 +792,70 @@ function renderTransferProjectRows(projectRows) {
   dom.transferCheckAll.indeterminate = selectedProjects > 0 && selectedProjects < projectRows.length;
 }
 
+const TRANSFER_PROGRESS_STEPS = [
+  { key: "select", label: "Select" },
+  { key: "export", label: "Export" },
+  { key: "restart", label: "Restart" },
+  { key: "done", label: "Complete" }
+];
+
+function transferProgressState(stepKey, phase) {
+  if (phase === "done") {
+    return "done";
+  }
+
+  if (phase === "error") {
+    if (stepKey === "select") {
+      return "done";
+    }
+    if (stepKey === "export") {
+      return "error";
+    }
+    return "pending";
+  }
+
+  if (phase === "restart") {
+    if (stepKey === "select" || stepKey === "export") {
+      return "done";
+    }
+    if (stepKey === "restart") {
+      return "current";
+    }
+    return "pending";
+  }
+
+  if (phase === "exporting") {
+    if (stepKey === "select") {
+      return "done";
+    }
+    if (stepKey === "export") {
+      return "current";
+    }
+    return "pending";
+  }
+
+  if (phase === "select") {
+    return stepKey === "select" ? "current" : "pending";
+  }
+
+  return "pending";
+}
+
+function renderTransferProgress(phase) {
+  if (!dom.transferProgress) {
+    return;
+  }
+
+  dom.transferProgress.innerHTML = TRANSFER_PROGRESS_STEPS.map((step) => {
+    const stepState = transferProgressState(step.key, phase);
+    return `
+      <div class="transfer-progress-segment" data-state="${stepState}">
+        <strong class="transfer-progress-label">${escapeHtml(step.label)}</strong>
+      </div>
+    `;
+  }).join("");
+}
+
 function renderTransferFlow() {
   if (!IS_TRANSFER_MODE || !dom.transferModal) {
     return;
@@ -806,11 +871,12 @@ function renderTransferFlow() {
   const batch = state.transfer.batch;
   const showSelection = phase === "select";
   const hasWarnings = Boolean(batch && batch.errors && batch.errors.length > 0);
+  const subtitle = "";
 
   dom.transferTitle.textContent = "Claude to Codex";
-  dom.transferSubtitle.textContent = showSelection
-    ? "Select Claude projects, export directly to Codex, then restart Codex once. This window will detect the restart automatically."
-    : "The transfer runs inside this window from selection to completion.";
+  dom.transferSubtitle.textContent = subtitle;
+  dom.transferSubtitle.classList.toggle("hidden", !subtitle);
+  renderTransferProgress(phase);
   dom.transferSelectionSummary.textContent = showSelection
     ? `${selectedProjects}/${totalProjects} projects selected | ${selectedSessions} sessions queued`
     : batch
@@ -839,9 +905,10 @@ function renderTransferFlow() {
   dom.transferPrimaryAction.disabled = false;
   dom.transferStatusExtra.classList.add("hidden");
   dom.transferStatusExtra.textContent = "";
+  dom.transferStatusKicker.textContent = "";
+  dom.transferStatusKicker.classList.add("hidden");
 
   if (phase === "exporting") {
-    dom.transferStatusKicker.textContent = "Step 2 / 4";
     dom.transferStatusTitle.textContent = "Exporting to Codex";
     dom.transferStatusMessage.textContent = batch
       ? `Creating ${batch.projectCount} Codex session(s) from the selected Claude projects.`
@@ -859,7 +926,6 @@ function renderTransferFlow() {
 
   if (phase === "restart") {
     const baselineRunning = Boolean(state.transfer.baselineCodexStatus && state.transfer.baselineCodexStatus.running);
-    dom.transferStatusKicker.textContent = "Step 3 / 4";
     dom.transferStatusTitle.textContent = baselineRunning ? "Restart Codex" : "Open Codex";
     dom.transferStatusMessage.textContent = baselineRunning
       ? "The Codex threads are ready. Fully quit Codex App, then reopen it. This window will mark the transfer complete once it sees the app come back."
@@ -880,7 +946,6 @@ function renderTransferFlow() {
   }
 
   if (phase === "done") {
-    dom.transferStatusKicker.textContent = "Step 4 / 4";
     dom.transferStatusTitle.textContent = "Export complete";
     dom.transferStatusMessage.textContent = batch
       ? `Created ${batch.handoffSuccessCount} Codex session(s) from ${batch.projectCount} Claude project(s).`
@@ -899,7 +964,6 @@ function renderTransferFlow() {
     return;
   }
 
-  dom.transferStatusKicker.textContent = "Transfer";
   dom.transferStatusTitle.textContent = "Export failed";
   dom.transferStatusMessage.textContent = batch && batch.errors.length > 0
     ? batch.errors[0]
