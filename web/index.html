@@ -29,64 +29,32 @@
               <span class="hero-flag">Overflow evidence saved</span>
             </div>
           </div>
-          <div class="top-actions">
-            <button id="theme-toggle" class="theme-toggle">Dark</button>
-            <button id="refresh-all" class="btn ghost">Refresh</button>
-            <button id="cleanup-expired" class="btn warning">Cleanup Expired Trash</button>
+          <div class="topbar-side">
+            <div class="top-actions">
+              <button id="theme-toggle" class="theme-toggle">Dark</button>
+              <button id="refresh-all" class="btn ghost">Refresh</button>
+              <button id="cleanup-expired" class="btn warning">Cleanup Expired Trash</button>
+            </div>
+            <aside class="hero-panel hero-panel-side">
+              <p class="panel-kicker">Runtime</p>
+              <div class="runtime-stack">
+                <div class="runtime-item">
+                  <span class="runtime-label">Mode</span>
+                  <strong id="hero-mode">Session Ops</strong>
+                </div>
+                <div class="runtime-item">
+                  <span class="runtime-label">Transfer</span>
+                  <strong id="hero-transfer-status">Idle</strong>
+                </div>
+                <div class="runtime-item">
+                  <span class="runtime-label">Scope</span>
+                  <strong>Codex / Claude / Gemini</strong>
+                </div>
+              </div>
+              <p id="config-info" class="muted runtime-config"></p>
+            </aside>
           </div>
         </header>
-
-        <div class="hero-grid">
-          <section class="hero-panel hero-panel-main">
-            <p class="panel-kicker">Thread Intake</p>
-            <h2 class="hero-title">Turn abandoned Claude sessions into new Codex context, not dead export files.</h2>
-            <p class="hero-copyline">
-              Index local session stores, compress the live engineering state, inject it into a fresh Codex thread, and keep the full evidence package on disk when the inline payload has to be cut down.
-            </p>
-
-            <div class="hero-stats">
-              <article class="stat-card">
-                <span class="stat-label">Codex Threads</span>
-                <strong id="stat-codex-total" class="stat-value">0</strong>
-                <span class="stat-meta">Indexed locally</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-label">Claude Active</span>
-                <strong id="stat-claude-active" class="stat-value">0</strong>
-                <span class="stat-meta">Ready to migrate</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-label">Transfer Projects</span>
-                <strong id="stat-transfer-projects" class="stat-value">0</strong>
-                <span class="stat-meta">Current intake lane</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-label">Trash Backlog</span>
-                <strong id="stat-trash-total" class="stat-value">0</strong>
-                <span class="stat-meta">Recoverable items</span>
-              </article>
-            </div>
-          </section>
-
-          <aside class="hero-panel hero-panel-side">
-            <p class="panel-kicker">Runtime</p>
-            <div class="runtime-stack">
-              <div class="runtime-item">
-                <span class="runtime-label">Mode</span>
-                <strong id="hero-mode">Session Ops</strong>
-              </div>
-              <div class="runtime-item">
-                <span class="runtime-label">Transfer</span>
-                <strong id="hero-transfer-status">Idle</strong>
-              </div>
-              <div class="runtime-item">
-                <span class="runtime-label">Scope</span>
-                <strong>Codex / Claude / Gemini</strong>
-              </div>
-            </div>
-            <p id="config-info" class="muted runtime-config"></p>
-          </aside>
-        </div>
       </section>
 
       <section class="notice" role="note">

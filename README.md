@@ -8,17 +8,15 @@ A local web tool for batch-managing CLI conversation history from **Codex** and 
 
 ## Screenshots
 
-**Codex tab — light theme**
+All screenshots below use **synthetic local demo data** and reflect the **current release UI**. No real Codex / Claude history is included.
 
-![Codex sessions in light theme](./screenshot-codex-light.png)
+**Transfer popup — dark theme**
 
-**Claude tab — light theme**
+![Claude to Codex transfer popup](./screenshot-transfer-dark.png)
 
-![Claude sessions in light theme](./screenshot-claude-light.png)
+**Dashboard / session ops — dark theme**
 
-**Codex tab — dark theme**
-
-![Codex sessions in dark theme](./screenshot-codex-dark.png)
+![Session Hub dashboard in dark theme](./screenshot-dashboard-dark.png)
 
 ## Install (No Homebrew Required)
 
@@ -214,6 +212,73 @@ node src/cli.js install
 ### D) Homebrew Formula Template
 
 Use `packaging/homebrew/session-hub.rb` as the formula template when publishing a tap.
+
+## Release / Packaging
+
+Session Hub is shipped as a **source release**. There is no frontend build step; the release artifact used by the shell installer and Homebrew is the GitHub tag tarball.
+
+### Release checklist
+
+1. Update version and release notes.
+
+```bash
+# example
+sed -n '1,80p' package.json
+```
+
+2. Refresh screenshots using **synthetic demo data only**.
+
+Do not capture screenshots from a real `~/.codex` / `~/.claude` workspace.
+
+3. Run release checks.
+
+```bash
+npm test
+node --check web/app.js
+bash -n scripts/install.sh
+git diff --check
+```
+
+4. Commit, tag, and push the release.
+
+```bash
+git tag v0.2.1
+git push origin main
+git push origin v0.2.1
+```
+
+5. Download the GitHub source tarball for the tag and compute its sha256.
+
+```bash
+curl -L -o /tmp/session-hub-v0.2.1.tar.gz \
+  https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.1.tar.gz
+
+shasum -a 256 /tmp/session-hub-v0.2.1.tar.gz
+```
+
+6. Regenerate the Homebrew formula file from the sha.
+
+```bash
+./scripts/write-homebrew-formula.sh v0.2.1 <sha256> cola-runner/session-hub
+```
+
+7. Copy the updated formula into the Homebrew tap repo and publish that change.
+
+The generated formula file is:
+
+```bash
+packaging/homebrew/session-hub.rb
+```
+
+### Pinned installer for a release tag
+
+The shell installer defaults to `main`, but you can pin it to a released tag tarball:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | \
+  SESSION_HUB_TARBALL_URL=https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.1.tar.gz \
+  bash
+```
 
 ## Uninstall
 

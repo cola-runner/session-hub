@@ -81,10 +81,6 @@ const dom = {
   configInfo: document.getElementById("config-info"),
   heroMode: document.getElementById("hero-mode"),
   heroTransferStatus: document.getElementById("hero-transfer-status"),
-  statCodexTotal: document.getElementById("stat-codex-total"),
-  statClaudeActive: document.getElementById("stat-claude-active"),
-  statTransferProjects: document.getElementById("stat-transfer-projects"),
-  statTrashTotal: document.getElementById("stat-trash-total"),
   feedback: document.getElementById("feedback"),
   refreshAll: document.getElementById("refresh-all"),
   cleanupExpired: document.getElementById("cleanup-expired"),
@@ -1347,28 +1343,7 @@ function renderTabCounts() {
 }
 
 function renderOverviewStats() {
-  const codexAll = codexSessions();
-  const claudeAll = claudeSessions();
-  const trashCount = state.trash.length;
-  const claudeActive = claudeAll.filter((session) => session.state === "active").length;
   const selectedClaudeProjects = selectedActiveClaudeProjectKeys().size;
-  const totalActiveClaudeProjects = new Set(activeClaudeSessions().map((session) => claudeProjectKey(session))).size;
-
-  if (dom.statCodexTotal) {
-    dom.statCodexTotal.textContent = String(codexAll.length);
-  }
-  if (dom.statClaudeActive) {
-    dom.statClaudeActive.textContent = String(claudeActive);
-  }
-  if (dom.statTransferProjects) {
-    const transferValue = IS_TRANSFER_MODE && selectedClaudeProjects > 0
-      ? selectedClaudeProjects
-      : totalActiveClaudeProjects;
-    dom.statTransferProjects.textContent = String(transferValue);
-  }
-  if (dom.statTrashTotal) {
-    dom.statTrashTotal.textContent = String(trashCount);
-  }
   if (dom.heroMode) {
     dom.heroMode.textContent = IS_TRANSFER_MODE ? "Transfer Mode" : "Session Ops";
   }
