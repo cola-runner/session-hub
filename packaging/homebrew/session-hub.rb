@@ -1,8 +1,8 @@
 class SessionHub < Formula
   desc "Local batch manager for CLI conversation history"
   homepage "https://github.com/cola-runner/session-hub"
-  url "https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.1.tar.gz"
-  sha256 "533062ac4bd4e37cbb5bd1dc1fe15182c4a0cba51e78f8a53aace1540943c796"
+  url "https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.2.tar.gz"
+  sha256 "9cd43c91b503c79f9e31d69500f0b7f2ed668de3f9c5ea73a9b17b4a454efe4d"
   license "MIT"
 
   depends_on "node"
