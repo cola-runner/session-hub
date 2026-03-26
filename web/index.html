@@ -28,6 +28,54 @@
               <span class="hero-flag">Batch transfer</span>
               <span class="hero-flag">Overflow evidence saved</span>
             </div>
+            <section class="hero-overview" aria-label="Workspace overview">
+              <article class="hero-stat-card">
+                <p class="panel-kicker">Working Set</p>
+                <p id="overview-live-value" class="hero-stat-value">0 active threads</p>
+                <p id="overview-live-copy" class="hero-stat-copy">
+                  Waiting for local session history to load.
+                </p>
+              </article>
+
+              <article class="hero-stat-card">
+                <p class="panel-kicker">Transfer Runway</p>
+                <p id="overview-transfer-value" class="hero-stat-value">0 Claude projects</p>
+                <p id="overview-transfer-copy" class="hero-stat-copy">
+                  Active Claude projects will appear here when available.
+                </p>
+              </article>
+
+              <article class="hero-stat-card">
+                <p class="panel-kicker">Footprint</p>
+                <p id="overview-storage-value" class="hero-stat-value">0 B on disk</p>
+                <p id="overview-storage-copy" class="hero-stat-copy">
+                  Live history and recoverable trash are counted together.
+                </p>
+              </article>
+
+              <article class="hero-stat-card">
+                <p class="panel-kicker">Recovery Lane</p>
+                <p id="overview-recovery-value" class="hero-stat-value">0 trash items</p>
+                <p id="overview-recovery-copy" class="hero-stat-copy">
+                  Expiring and stale items are surfaced here.
+                </p>
+              </article>
+            </section>
+
+            <section class="provider-strip" aria-label="Provider totals">
+              <article class="provider-chip provider-chip-codex">
+                <span class="provider-chip-name">Codex</span>
+                <strong id="overview-codex-copy">0 active / 0 total</strong>
+              </article>
+              <article class="provider-chip provider-chip-claude">
+                <span class="provider-chip-name">Claude</span>
+                <strong id="overview-claude-copy">0 active / 0 total</strong>
+              </article>
+              <article class="provider-chip provider-chip-gemini">
+                <span class="provider-chip-name">Gemini</span>
+                <strong id="overview-gemini-copy">0 active / 0 total</strong>
+              </article>
+            </section>
           </div>
           <div class="topbar-side">
             <div class="top-actions">

@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
   echo "Usage: $0 <version-tag> <sha256> [repo]" >&2
-  echo "Example: $0 v0.2.1 0123abcd... cola-runner/session-hub" >&2
+  echo "Example: $0 v0.2.2 0123abcd... cola-runner/session-hub" >&2
   exit 1
 fi
 

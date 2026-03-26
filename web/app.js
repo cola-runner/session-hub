@@ -81,6 +81,17 @@ const dom = {
   configInfo: document.getElementById("config-info"),
   heroMode: document.getElementById("hero-mode"),
   heroTransferStatus: document.getElementById("hero-transfer-status"),
+  overviewLiveValue: document.getElementById("overview-live-value"),
+  overviewLiveCopy: document.getElementById("overview-live-copy"),
+  overviewTransferValue: document.getElementById("overview-transfer-value"),
+  overviewTransferCopy: document.getElementById("overview-transfer-copy"),
+  overviewStorageValue: document.getElementById("overview-storage-value"),
+  overviewStorageCopy: document.getElementById("overview-storage-copy"),
+  overviewRecoveryValue: document.getElementById("overview-recovery-value"),
+  overviewRecoveryCopy: document.getElementById("overview-recovery-copy"),
+  overviewCodexCopy: document.getElementById("overview-codex-copy"),
+  overviewClaudeCopy: document.getElementById("overview-claude-copy"),
+  overviewGeminiCopy: document.getElementById("overview-gemini-copy"),
   feedback: document.getElementById("feedback"),
   refreshAll: document.getElementById("refresh-all"),
   cleanupExpired: document.getElementById("cleanup-expired"),
@@ -243,6 +254,65 @@ function truncateText(value, maxLength = 56) {
     return chars.join("");
   }
   return `${chars.slice(0, maxLength - 1).join("")}…`;
+}
+
+function pluralize(count, singular, pluralForm) {
+  if (count === 1) {
+    return singular;
+  }
+  return pluralForm || `${singular}s`;
+}
+
+function formatRelativeAge(isoDate) {
+  const epoch = Date.parse(isoDate);
+  if (!Number.isFinite(epoch)) {
+    return "unknown";
+  }
+
+  const diffMs = Date.now() - epoch;
+  const absDiffMs = Math.abs(diffMs);
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  let value;
+  let unit;
+  if (absDiffMs < hourMs) {
+    value = Math.max(1, Math.round(absDiffMs / minuteMs));
+    unit = pluralize(value, "minute");
+  } else if (absDiffMs < dayMs) {
+    value = Math.max(1, Math.round(absDiffMs / hourMs));
+    unit = pluralize(value, "hour");
+  } else {
+    value = Math.max(1, Math.round(absDiffMs / dayMs));
+    unit = pluralize(value, "day");
+  }
+
+  return diffMs >= 0 ? `${value} ${unit} ago` : `in ${value} ${unit}`;
+}
+
+function sumSizeBytes(items) {
+  return items.reduce((total, item) => total + (Number(item.sizeBytes) || 0), 0);
+}
+
+function appendEmptyStateRow(tbody, colspan, title, detail) {
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = colspan;
+  cell.className = "empty-state-cell";
+
+  const titleNode = document.createElement("p");
+  titleNode.className = "empty-state-title";
+  titleNode.textContent = title;
+
+  const detailNode = document.createElement("p");
+  detailNode.className = "empty-state-copy";
+  detailNode.textContent = detail;
+
+  cell.appendChild(titleNode);
+  cell.appendChild(detailNode);
+  row.appendChild(cell);
+  tbody.appendChild(row);
 }
 
 function statePill(sessionState) {
@@ -1043,24 +1113,37 @@ function renderCodex() {
   const selectedSet = state.selected.codex;
 
   dom.codexBody.innerHTML = "";
-  for (const session of rows) {
-    const title = session.title || "Untitled session";
-    const displayTitle = truncateText(title, 62);
-    const displayThreadId = truncateText(session.threadId, 14);
+  if (rows.length === 0) {
+    appendEmptyStateRow(
+      dom.codexBody,
+      7,
+      state.queries.codex.trim()
+        ? "No Codex sessions matched this search."
+        : "No Codex sessions are visible in this state.",
+      state.queries.codex.trim()
+        ? "Clear the search term or switch the state filter to widen the result set."
+        : "Active and archived Codex rollouts will appear here once Session Hub detects them."
+    );
+  } else {
+    for (const session of rows) {
+      const title = session.title || "Untitled session";
+      const displayTitle = truncateText(title, 62);
+      const displayThreadId = truncateText(session.threadId, 14);
 
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
-      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
-      <td>${statePill(session.state)}</td>
-      <td title="${escapeHtml(session.threadId)}">${escapeHtml(displayThreadId)}</td>
-      <td>${formatDate(session.updatedAt)}</td>
-      <td>${formatBytes(session.sizeBytes)}</td>
-      <td title="${escapeHtml(session.relativePath || "")}">${escapeHtml(
-      truncateText(session.relativePath || "", 48)
-    )}</td>
-    `;
-    dom.codexBody.appendChild(row);
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+        <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+        <td>${statePill(session.state)}</td>
+        <td title="${escapeHtml(session.threadId)}">${escapeHtml(displayThreadId)}</td>
+        <td>${formatDate(session.updatedAt)}</td>
+        <td>${formatBytes(session.sizeBytes)}</td>
+        <td title="${escapeHtml(session.relativePath || "")}">${escapeHtml(
+        truncateText(session.relativePath || "", 48)
+      )}</td>
+      `;
+      dom.codexBody.appendChild(row);
+    }
   }
 
   dom.codexBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
@@ -1090,19 +1173,32 @@ function renderClaude() {
     const selectedSet = state.selected.claude;
 
     dom.claudeBody.innerHTML = "";
-    for (const project of projectRows) {
-      const projectName = project.projectName || "(unknown-project)";
-      const displayProject = truncateText(projectName, 62);
+    if (projectRows.length === 0) {
+      appendEmptyStateRow(
+        dom.claudeBody,
+        5,
+        state.queries.claude.trim()
+          ? "No Claude projects matched this search."
+          : "No active Claude projects are ready for transfer.",
+        state.queries.claude.trim()
+          ? "Try a broader search or clear it to see the full transfer queue."
+          : "Transfer mode only queues active Claude project history. Archived projects stay out of the handoff lane."
+      );
+    } else {
+      for (const project of projectRows) {
+        const projectName = project.projectName || "(unknown-project)";
+        const displayProject = truncateText(projectName, 62);
 
-      const row = document.createElement("tr");
-      row.innerHTML = `
-      <td><input type="checkbox" data-project-key="${escapeHtml(project.projectKey)}" /></td>
-      <td class="title-cell" title="${escapeHtml(projectName)}">${escapeHtml(displayProject)}</td>
-      <td>${project.sessionCount}</td>
-      <td>${formatDate(project.latestUpdatedAt)}</td>
-      <td>${formatBytes(project.sizeBytes)}</td>
-    `;
-      dom.claudeBody.appendChild(row);
+        const row = document.createElement("tr");
+        row.innerHTML = `
+        <td><input type="checkbox" data-project-key="${escapeHtml(project.projectKey)}" /></td>
+        <td class="title-cell" title="${escapeHtml(projectName)}">${escapeHtml(displayProject)}</td>
+        <td>${project.sessionCount}</td>
+        <td>${formatDate(project.latestUpdatedAt)}</td>
+        <td>${formatBytes(project.sizeBytes)}</td>
+      `;
+        dom.claudeBody.appendChild(row);
+      }
     }
 
     dom.claudeBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
@@ -1132,19 +1228,32 @@ function renderClaude() {
   const selectedSet = state.selected.claude;
 
   dom.claudeBody.innerHTML = "";
-  for (const session of rows) {
-    const project = session.projectName || "-";
-    const displayProject = truncateText(project, 62);
+  if (rows.length === 0) {
+    appendEmptyStateRow(
+      dom.claudeBody,
+      5,
+      state.queries.claude.trim()
+        ? "No Claude sessions matched this search."
+        : "No Claude sessions are visible in this state.",
+      state.queries.claude.trim()
+        ? "Clear the search term or switch the state filter to bring more projects back into view."
+        : "Claude session history will appear here once the local project logs are detected."
+    );
+  } else {
+    for (const session of rows) {
+      const project = session.projectName || "-";
+      const displayProject = truncateText(project, 62);
 
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
-      <td class="title-cell" title="${escapeHtml(project)}">${escapeHtml(displayProject)}</td>
-      <td>${session.messageCount || 0}</td>
-      <td>${formatDate(session.updatedAt)}</td>
-      <td>${formatBytes(session.sizeBytes)}</td>
-    `;
-    dom.claudeBody.appendChild(row);
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+        <td class="title-cell" title="${escapeHtml(project)}">${escapeHtml(displayProject)}</td>
+        <td>${session.messageCount || 0}</td>
+        <td>${formatDate(session.updatedAt)}</td>
+        <td>${formatBytes(session.sizeBytes)}</td>
+      `;
+      dom.claudeBody.appendChild(row);
+    }
   }
 
   dom.claudeBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
@@ -1172,22 +1281,35 @@ function renderGemini() {
   const selectedSet = state.selected.gemini;
 
   dom.geminiBody.innerHTML = "";
-  for (const session of rows) {
-    const title = session.title || "Untitled session";
-    const displayTitle = truncateText(title, 62);
-    const hash = session.projectHash || "-";
+  if (rows.length === 0) {
+    appendEmptyStateRow(
+      dom.geminiBody,
+      7,
+      state.queries.gemini.trim()
+        ? "No Gemini sessions matched this search."
+        : "No Gemini sessions are visible in this state.",
+      state.queries.gemini.trim()
+        ? "Clear the search term or switch the filter to reopen the wider Gemini history set."
+        : "Gemini session files appear here when Session Hub finds local chats under the configured Gemini home."
+    );
+  } else {
+    for (const session of rows) {
+      const title = session.title || "Untitled session";
+      const displayTitle = truncateText(title, 62);
+      const hash = session.projectHash || "-";
 
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
-      <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
-      <td>${statePill(session.state)}</td>
-      <td title="${escapeHtml(hash)}">${escapeHtml(truncateText(hash, 16))}</td>
-      <td>${session.messageCount || 0}</td>
-      <td>${formatDate(session.updatedAt)}</td>
-      <td>${formatBytes(session.sizeBytes)}</td>
-    `;
-    dom.geminiBody.appendChild(row);
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input type="checkbox" data-session-id="${session.itemId}" /></td>
+        <td class="title-cell" title="${escapeHtml(title)}">${escapeHtml(displayTitle)}</td>
+        <td>${statePill(session.state)}</td>
+        <td title="${escapeHtml(hash)}">${escapeHtml(truncateText(hash, 16))}</td>
+        <td>${session.messageCount || 0}</td>
+        <td>${formatDate(session.updatedAt)}</td>
+        <td>${formatBytes(session.sizeBytes)}</td>
+      `;
+      dom.geminiBody.appendChild(row);
+    }
   }
 
   dom.geminiBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
@@ -1214,23 +1336,36 @@ function renderTrash() {
   const rows = filteredTrash();
   dom.trashBody.innerHTML = "";
 
-  for (const item of rows) {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><input type="checkbox" data-trash-id="${item.trashId}" /></td>
-      <td>${trashExpiryPill(item.expired)}</td>
-      <td>${providerBadge(item.provider || "codex")}</td>
-      <td title="${escapeHtml(item.threadId || "-")}">${escapeHtml(
-      truncateText(item.threadId || "-", 16)
-    )}</td>
-      <td>${formatDate(item.deletedAt)}</td>
-      <td>${formatDate(item.expiresAt)}</td>
-      <td>${formatBytes(item.sizeBytes)}</td>
-      <td title="${escapeHtml(item.originalRelativePath || "")}">${escapeHtml(
-      truncateText(item.originalRelativePath || "-", 48)
-    )}</td>
-    `;
-    dom.trashBody.appendChild(row);
+  if (rows.length === 0) {
+    appendEmptyStateRow(
+      dom.trashBody,
+      8,
+      state.queries.trash.trim()
+        ? "No trash items matched this search."
+        : "Trash is clean right now.",
+      state.queries.trash.trim()
+        ? "Clear the search term to see the full recovery lane again."
+        : "Soft-deleted sessions stay here until you restore them, purge them, or let retention expire."
+    );
+  } else {
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input type="checkbox" data-trash-id="${item.trashId}" /></td>
+        <td>${trashExpiryPill(item.expired)}</td>
+        <td>${providerBadge(item.provider || "codex")}</td>
+        <td title="${escapeHtml(item.threadId || "-")}">${escapeHtml(
+        truncateText(item.threadId || "-", 16)
+      )}</td>
+        <td>${formatDate(item.deletedAt)}</td>
+        <td>${formatDate(item.expiresAt)}</td>
+        <td>${formatBytes(item.sizeBytes)}</td>
+        <td title="${escapeHtml(item.originalRelativePath || "")}">${escapeHtml(
+        truncateText(item.originalRelativePath || "-", 48)
+      )}</td>
+      `;
+      dom.trashBody.appendChild(row);
+    }
   }
 
   dom.trashBody.querySelectorAll("input[type=checkbox]").forEach((checkbox) => {
@@ -1343,7 +1478,42 @@ function renderTabCounts() {
 }
 
 function renderOverviewStats() {
+  const codexAll = codexSessions();
+  const claudeAll = claudeSessions();
+  const geminiAll = geminiSessions();
+  const liveAll = codexAll.concat(claudeAll).concat(geminiAll);
+  const activeAll = liveAll.filter((session) => session.state === "active");
+  const archivedAll = liveAll.filter((session) => session.state === "archived");
   const selectedClaudeProjects = selectedActiveClaudeProjectKeys().size;
+  const activeClaudeProjects = new Set(activeClaudeSessions().map((session) => claudeProjectKey(session))).size;
+  const liveSizeBytes = sumSizeBytes(liveAll);
+  const trashSizeBytes = sumSizeBytes(state.trash);
+  const now = Date.now();
+  const warningWindowMs = 3 * 24 * 60 * 60 * 1000;
+  const expiringSoonCount = state.trash.filter((item) => {
+    const expiresAt = Date.parse(item.expiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > now && expiresAt - now <= warningWindowMs;
+  }).length;
+  const expiredCount = state.trash.filter((item) => item.expired).length;
+  const staleCount = liveAll.filter((session) => {
+    const updatedAt = Date.parse(session.updatedAt);
+    return Number.isFinite(updatedAt) && now - updatedAt >= 14 * 24 * 60 * 60 * 1000;
+  }).length;
+  const latestSession = liveAll.reduce((latest, session) => {
+    if (!latest) {
+      return session;
+    }
+    const latestEpoch = Date.parse(latest.updatedAt);
+    const sessionEpoch = Date.parse(session.updatedAt);
+    if (!Number.isFinite(sessionEpoch)) {
+      return latest;
+    }
+    if (!Number.isFinite(latestEpoch) || sessionEpoch > latestEpoch) {
+      return session;
+    }
+    return latest;
+  }, null);
+
   if (dom.heroMode) {
     dom.heroMode.textContent = IS_TRANSFER_MODE ? "Transfer Mode" : "Session Ops";
   }
@@ -1363,6 +1533,82 @@ function renderOverviewStats() {
     } else {
       dom.heroTransferStatus.textContent = "Idle";
     }
+  }
+
+  if (dom.overviewLiveValue) {
+    dom.overviewLiveValue.textContent = `${activeAll.length} active ${pluralize(activeAll.length, "thread")}`;
+  }
+  if (dom.overviewLiveCopy) {
+    if (liveAll.length === 0) {
+      dom.overviewLiveCopy.textContent = "No local session history is loaded yet. Once providers are detected, the working set appears here.";
+    } else {
+      dom.overviewLiveCopy.textContent =
+        `${archivedAll.length} archived ${pluralize(archivedAll.length, "session")} sitting behind ${liveAll.length} total ${pluralize(liveAll.length, "thread")}.`;
+    }
+  }
+
+  if (dom.overviewTransferValue) {
+    dom.overviewTransferValue.textContent = `${activeClaudeProjects} Claude ${pluralize(activeClaudeProjects, "project")}`;
+  }
+  if (dom.overviewTransferCopy) {
+    if (activeClaudeProjects === 0) {
+      dom.overviewTransferCopy.textContent = "Active Claude projects become transfer-ready here as soon as Session Hub detects them.";
+    } else if (selectedClaudeProjects > 0) {
+      dom.overviewTransferCopy.textContent =
+        `${selectedClaudeProjects} ${pluralize(selectedClaudeProjects, "project")} ${IS_TRANSFER_MODE ? "queued for inline Codex handoff right now." : "currently selected for the next export run."}`;
+    } else {
+      dom.overviewTransferCopy.textContent =
+        `${activeClaudeSessions().length} active Claude ${pluralize(activeClaudeSessions().length, "session")} are ready to be bundled into fresh Codex threads.`;
+    }
+  }
+
+  if (dom.overviewStorageValue) {
+    dom.overviewStorageValue.textContent = `${formatBytes(liveSizeBytes + trashSizeBytes)} on disk`;
+  }
+  if (dom.overviewStorageCopy) {
+    dom.overviewStorageCopy.textContent =
+      `${formatBytes(liveSizeBytes)} live history plus ${formatBytes(trashSizeBytes)} in recoverable trash.`;
+  }
+
+  if (dom.overviewRecoveryValue) {
+    if (expiredCount > 0) {
+      dom.overviewRecoveryValue.textContent = `${expiredCount} expired ${pluralize(expiredCount, "item")}`;
+    } else if (expiringSoonCount > 0) {
+      dom.overviewRecoveryValue.textContent = `${expiringSoonCount} expiring soon`;
+    } else {
+      dom.overviewRecoveryValue.textContent = `${state.trash.length} trash ${pluralize(state.trash.length, "item")}`;
+    }
+  }
+  if (dom.overviewRecoveryCopy) {
+    const latestActivityText = latestSession
+      ? `Latest activity ${formatRelativeAge(latestSession.updatedAt)}.`
+      : "No recent session activity yet.";
+    if (expiredCount > 0) {
+      dom.overviewRecoveryCopy.textContent =
+        `Expired trash can be cleared immediately. ${staleCount} live ${pluralize(staleCount, "thread")} have been idle for 14+ days.`;
+    } else if (expiringSoonCount > 0) {
+      dom.overviewRecoveryCopy.textContent =
+        `${expiringSoonCount} trash ${pluralize(expiringSoonCount, "item")} will age out within 72 hours. ${latestActivityText}`;
+    } else if (state.trash.length > 0) {
+      dom.overviewRecoveryCopy.textContent =
+        `${state.trash.length} recoverable ${pluralize(state.trash.length, "item")} remain in the lane. ${latestActivityText}`;
+    } else {
+      dom.overviewRecoveryCopy.textContent =
+        `${staleCount} live ${pluralize(staleCount, "thread")} have been idle for 14+ days. ${latestActivityText}`;
+    }
+  }
+
+  if (dom.overviewCodexCopy) {
+    const activeCount = codexAll.filter((session) => session.state === "active").length;
+    dom.overviewCodexCopy.textContent = `${activeCount} active / ${codexAll.length} total`;
+  }
+  if (dom.overviewClaudeCopy) {
+    const activeCount = claudeAll.filter((session) => session.state === "active").length;
+    dom.overviewClaudeCopy.textContent = `${activeCount} active / ${claudeAll.length} total`;
+  }
+  if (dom.overviewGeminiCopy) {
+    const activeCount = geminiAll.filter((session) => session.state === "active").length;
+    dom.overviewGeminiCopy.textContent = `${activeCount} active / ${geminiAll.length} total`;
   }
 }
 

@@ -242,24 +242,24 @@ git diff --check
 4. Commit, tag, and push the release.
 
 ```bash
-git tag v0.2.1
+git tag v0.2.2
 git push origin main
-git push origin v0.2.1
+git push origin v0.2.2
 ```
 
 5. Download the GitHub source tarball for the tag and compute its sha256.
 
 ```bash
-curl -L -o /tmp/session-hub-v0.2.1.tar.gz \
-  https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.1.tar.gz
+curl -L -o /tmp/session-hub-v0.2.2.tar.gz \
+  https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.2.tar.gz
 
-shasum -a 256 /tmp/session-hub-v0.2.1.tar.gz
+shasum -a 256 /tmp/session-hub-v0.2.2.tar.gz
 ```
 
 6. Regenerate the Homebrew formula file from the sha.
 
 ```bash
-./scripts/write-homebrew-formula.sh v0.2.1 <sha256> cola-runner/session-hub
+./scripts/write-homebrew-formula.sh v0.2.2 <sha256> cola-runner/session-hub
 ```
 
 7. Copy the updated formula into the Homebrew tap repo and publish that change.
@@ -276,7 +276,7 @@ The shell installer defaults to `main`, but you can pin it to a released tag tar
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cola-runner/session-hub/main/scripts/install.sh | \
-  SESSION_HUB_TARBALL_URL=https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.1.tar.gz \
+  SESSION_HUB_TARBALL_URL=https://github.com/cola-runner/session-hub/archive/refs/tags/v0.2.2.tar.gz \
   bash
 ```
 
